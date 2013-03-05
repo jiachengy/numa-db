@@ -1,7 +1,6 @@
 #include "hashtable.h"
 #include <cstring>
 
-#include <iostream>
 using namespace std;
 
 HashTable::HashTable(size_t capacity)

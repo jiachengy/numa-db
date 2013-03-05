@@ -1,17 +1,30 @@
 #include <iostream>
-#include "hashtable.h"
+#include "numadb.h"
+
+#include "builder.h"
 
 using namespace std;
 
 int main(int argc, char *argv[])
 {
-	HashTable *ht = new HashTable(1000);
+	TableBuilder builder;
+	PTable *table = builder.Build(64,1000);
 
-	for (unsigned int i = 0; i < 100; i++)
-		ht->Put(i,i);
+	// StorageEngine *se;
 
-	for (unsigned int i = 0; i < 100; i++)
-		cout << ht->Get(i) << endl;
+	// PTable *table = new PTable;
 
-	delete ht;
+	// int npartitions = 16;
+	// for (unsigned int i = 0; i < npartitions; i++) {
+	// 	Partition *p = GeneratePartition();
+	// 	table->AddPartititon(p);
+	// }
+
+	// Optimizer opt;
+	// Plan plan = opt.compile();
+
+	// Environment env;
+	// QueryEngine *qe;
+	// qe->query(plan, env);
+
 }
