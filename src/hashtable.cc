@@ -7,7 +7,7 @@ using namespace std;
 HashTable::HashTable(size_t capacity)
 {
 	keys_ = new key_t[capacity];
-    vals_ = new val_t[capacity];
+	vals_ = new val_t[capacity];
 	memset(keys_, 0, capacity * sizeof(key_t));
 	memset(vals_, 0, capacity * sizeof(val_t));
 	capacity_ = capacity;
@@ -36,7 +36,7 @@ val_t HashTable::Get(key_t key)
 void HashTable::Put(key_t key, val_t value)
 {
 	size_++;
-    uint32_t h = hash32(key) % capacity_;
+	uint32_t h = hash32(key) % capacity_;
 	
 	while (keys_[h] != 0 && keys_[h] != key)
 		h = (h + 1) % capacity_;
