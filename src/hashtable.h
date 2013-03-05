@@ -16,7 +16,7 @@ class HashTable
 	size_t size_;
 	
 	key_t *keys_;
-	val_t *values_;
+	val_t *vals_;
 	
  public:
 	HashTable(size_t capacity);
@@ -24,7 +24,7 @@ class HashTable
 
 
 	val_t Get(key_t key);
-	void Put(key_t key, val_t value);
+	void Put(key_t key, val_t val);
 	size_t size() { return size_; }
 	size_t capacity() { return capacity_; }
 
