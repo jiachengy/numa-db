@@ -4,9 +4,9 @@
 
 void QueryEngine::initpipe(Plan *plan)
 {
-	for (int i = 0; i < plan->leaves.size(); i++) {
+	for (unsigned int i = 0; i < plan->leaves.size(); i++) {
 		PTable *t = plan->leaves[i];
-		for (int pid = 0; pid < t->size(); pid++) {
+		for (unsigned int pid = 0; pid < t->size(); pid++) {
 			Partition *p = t->GetPartition(pid);
 			actives_[p->cpu].push(p);
 		}
@@ -15,7 +15,7 @@ void QueryEngine::initpipe(Plan *plan)
 
 void QueryEngine::start()
 {
-	for (int i = 0; i < nworkers_; i++) {
+	for (unsigned int i = 0; i < nworkers_; i++) {
 		executors_[i].cpu_ = i;
 		executors_[i].active_ = &actives_[i];
 		executors_[i].start();
@@ -24,7 +24,7 @@ void QueryEngine::start()
 
 void QueryEngine::stop()
 {
-	for (int i = 0; i < nworkers_; i++) {
+	for (unsigned int i = 0; i < nworkers_; i++) {
 		executors_[i].stop();
 	}
 }
@@ -45,6 +45,8 @@ void QueryEngine::Query(Plan *plan)
 	// 3. synchronize
 	// blocked by the finish signal of the output
 	
+	sleep(1);
+
 	stop();
 }
 

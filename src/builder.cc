@@ -20,7 +20,7 @@ Partition* PartitionBuilder::Build(size_t sz, int cpu, PTable *table)
 	p->size = sz;
 	p->table = table;
 
-	unsigned int seed = time(NULL);	
+	//	unsigned int seed = time(NULL);	
 	data_t *data = (data_t*)alloc(sz * sizeof(data_t));
 	rid_t *rids = (rid_t*)alloc(sz * sizeof(rid_t));
 	for (unsigned int i = 0; i < sz; i++) {
@@ -41,6 +41,7 @@ void* TableBuilder::build(void *targ)
 	BuildArg *arg = (BuildArg*)targ;
 	Partition *p = arg->builder->Build(arg->size, arg->cpu, arg->table);
 	arg->p = p;
+	return NULL;
 }
 
 PTable* TableBuilder::Build(size_t nparts, size_t psize)

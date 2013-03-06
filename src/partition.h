@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <vector>
 
+#include "hashtable.h"
 #include "numadb.h"
 #include "executor.h"
 #include "ptable.h"
@@ -11,20 +12,20 @@
 class Block;
 class Partition;
 
-typedef void (*Exec)(Block block, PTable *out);
+typedef void (*Exec)(Block block, Partition *out);
 
 struct Block
 {
-	data_t *data_;
-	rid_t *rids_;
-	size_t size_;
+	data_t *data;
+	rid_t *rids;
+	size_t size;
 
-	Block(data_t *data, rid_t *rids, size_t sz) {
-		data_ = data;
-		rids_ = rids;
-		size_ = sz;
+	Block(data_t *d, rid_t *r, size_t sz) {
+		data = d;
+		rids = r;
+		size = sz;
 	}
-	bool empty() { return size_ == 0; }
+	bool empty() { return size == 0; }
 };
 
 
@@ -55,7 +56,9 @@ class Partition
 			sz = size - curpos;
 			curpos = -1;
 		}
-		return Block(data+curpos, rids+curpos, sz);
+		else
+			curpos += BLOCK_SIZE;
+		return Block(data+pos, rids+pos, sz);
 	}
 
 	// Location and cpu info
@@ -83,15 +86,27 @@ class Partition
 	rid_t *rids;
 
 	// Current position
-	unsigned int curpos;
+	int curpos;
 
 	// Pipeline Operation
 	Exec exec;
-	PTable *output;
+	Partition *output;
 
 	// Parent reference
 	PTable *table;
 };
 
+
+
+class HTPartition : public Partition
+{
+ public:
+	HTPartition()
+		: Partition() {
+		hashtable = NULL;
+	}
+
+	HashTable *hashtable;
+};
 
 #endif // PARTITION_H_

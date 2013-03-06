@@ -11,22 +11,29 @@ void* Executor::execute(void *args)
 
 	queue<Partition*> *active = self->active_;
 
+	LOG(INFO) << "Thread " << self->cpu_ << " is starting.";
+
 	while (!self->exit_) {
 		while (!active->empty()) {
 			Partition *current = active->front();
-
-			// check whether we need a new output partition
-			// but actually it depends on the algorithm
-			// so only the exec knows it
-			// let the exec worries about it.
-
 			while (!current->Eop()) {
 				Block b = current->Next();
 				if (b.empty()) break;
+				
+				// the exec func decides where to write the output
 				current->exec(b, current->output);	
 			}
+
+			// check the result
+			LocalAggrTable *ht = (LocalAggrTable*)(((HTPartition*)current->output)->hashtable);
+			for (int i = 0; i < 1000; i++) {
+				LOG(INFO) << ht->Get(i);
+			}
+
+			LOG(INFO) << "Thread " << self->cpu_ << " local aggregation done.";
+			active->pop();
 		}
-		
+		// TODO
 		// communicate with query engine, try stealing
 	}
 
