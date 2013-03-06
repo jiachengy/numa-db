@@ -1,30 +1,26 @@
 #include <iostream>
-#include "numadb.h"
+#include <glog/logging.h>
+#include <gflags/gflags.h>
 
+#include "numadb.h"
 #include "builder.h"
+#include "plan.h"
+#include "optimizer.h"
+#include "engine.h"
 
 using namespace std;
 
 int main(int argc, char *argv[])
 {
-	TableBuilder builder;
-	PTable *table = builder.Build(64,1000);
+	google::InitGoogleLogging(argv[0]);
+	FLAGS_logtostderr = true;
 
-	// StorageEngine *se;
+	size_t nthreads = 4;
+	
+	Optimizer optimizer;
+	Plan *plan = optimizer.Compile(nthreads);
 
-	// PTable *table = new PTable;
-
-	// int npartitions = 16;
-	// for (unsigned int i = 0; i < npartitions; i++) {
-	// 	Partition *p = GeneratePartition();
-	// 	table->AddPartititon(p);
-	// }
-
-	// Optimizer opt;
-	// Plan plan = opt.compile();
-
-	// Environment env;
-	// QueryEngine *qe;
-	// qe->query(plan, env);
+	QueryEngine qe;
+	qe.Query(plan);
 
 }

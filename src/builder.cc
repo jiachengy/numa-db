@@ -1,7 +1,7 @@
 #include <ctime>
-#include <iostream>
 #include <numa.h>
 #include <pthread.h>
+#include <glog/logging.h>
 
 #include "partition.h"
 #include "builder.h"
@@ -24,17 +24,19 @@ Partition* PartitionBuilder::Build(size_t sz, int cpu, PTable *table)
 	data_t *data = (data_t*)alloc(sz * sizeof(data_t));
 	rid_t *rids = (rid_t*)alloc(sz * sizeof(rid_t));
 	for (unsigned int i = 0; i < sz; i++) {
-		data[i] = rand_r(&seed);
+		//		data[i] = rand_r(&seed);
+		data[i] = i;
 		rids[i] = i;
 	}
 	p->data = data;
 	p->rids = rids;
 
-	//	cout << "Partition <" << sz << "> " << cpu << ":" <<p->node << endl;
-	cout << p -> node << endl;
+	LOG(INFO) << "Partition <" << sz << "> " << cpu << ":" <<p->node;
+
+	return p;
 }
 
-void* build(void *targ)
+void* TableBuilder::build(void *targ)
 {
 	BuildArg *arg = (BuildArg*)targ;
 	Partition *p = arg->builder->Build(arg->size, arg->cpu, arg->table);
@@ -52,7 +54,7 @@ PTable* TableBuilder::Build(size_t nparts, size_t psize)
 		args[i].cpu = i;
 		args[i].table = table;
 		args[i].builder = &pbuilder_;
-		pthread_create(&threads[i], NULL, build, (void*)&args[i]);
+		pthread_create(&threads[i], NULL, &TableBuilder::build, (void*)&args[i]);
 	}
 
 	for (unsigned int i = 0; i < nparts; i++)

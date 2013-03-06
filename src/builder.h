@@ -28,7 +28,7 @@ class TableBuilder
 {
  private:
 	PartitionBuilder pbuilder_;
-
+	static void* build(void *targ);
  public:
 	PTable *Build(size_t nparts, size_t psize);
 };

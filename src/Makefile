@@ -1,2 +1,6 @@
+CC=g++
+CFLAGS=-pthread
+LIBS=-lnuma -lglog -lgflags
+
 all: *.h *.cc
-	g++ -o test.out -std=c++11 *.cc -pthread -lnuma
+	$(CC) -o test.out $(CFLAGS) *.cc $(LIBS)
