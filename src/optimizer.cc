@@ -6,7 +6,7 @@
 Plan* test_plan(size_t nworkers)
 {
 	TableBuilder builder;
-	PTable *table = builder.Build(nworkers,1000);
+	PTable *table = builder.Build(nworkers,10000000);
 
 	PTable *hashtable = new PTable;
 

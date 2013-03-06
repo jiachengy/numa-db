@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-pthread -g -Wall
+CFLAGS=-pthread -Wall -O3
 LIBS=-lnuma -lglog -lgflags
 
 all: *.h *.cc

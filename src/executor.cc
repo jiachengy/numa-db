@@ -1,8 +1,11 @@
 #include <glog/logging.h>
 #include <pthread.h>
+#include "engine.h"
 #include "executor.h"
 
 #include "util.h"
+
+extern QueryEngine qe;
 
 void* Executor::execute(void *args)
 {
@@ -13,30 +16,34 @@ void* Executor::execute(void *args)
 
 	LOG(INFO) << "Thread " << self->cpu_ << " is starting.";
 
-	while (!self->exit_) {
-		while (!active->empty()) {
-			Partition *current = active->front();
-			while (!current->Eop()) {
-				Block b = current->Next();
-				if (b.empty()) break;
-				
-				// the exec func decides where to write the output
-				current->exec(b, current->output);	
-			}
+	while (!active->empty()) {
+		Partition *current = active->front();
+		while (!current->Eop()) {
+			Block b = current->Next();
+			if (b.empty())
+				break;
 
-			// check the result
-			LocalAggrTable *ht = (LocalAggrTable*)(((HTPartition*)current->output)->hashtable);
-			for (int i = 0; i < 1000; i++) {
-				LOG(INFO) << ht->Get(i);
-			}
-
-			LOG(INFO) << "Thread " << self->cpu_ << " local aggregation done.";
-			active->pop();
+			current->exec(b, current->output);	
 		}
-		// TODO
-		// communicate with query engine, try stealing
-	}
 
+		LOG(INFO) << "Thread " << self->cpu_ << " local aggregation done.";
+		active->pop();
+	}
+	// TODO
+	// communicate with query engine, try stealing
+		
+	// indicate the engine, the thread has finished working
+	// but only needs to indicate once!
+	pthread_mutex_lock(&qe.done_mutex_);
+	qe.done_count_++;
+	if (qe.done_count_ == qe.nworkers_)
+		pthread_cond_signal(&qe.done_cv_);
+	pthread_mutex_unlock(&qe.done_mutex_);
+
+	// why spin falls into a dead loop?
+	// while (!self->exit_)
+	// 	;
+	
 	LOG(INFO) << "Thread " << self->cpu_ << " is existing!";
 	pthread_exit(NULL);
 }
@@ -51,5 +58,6 @@ void Executor::start()
 void Executor::stop()
 {
 	exit_ = true;
+
 	pthread_join(thread_, NULL);
 }

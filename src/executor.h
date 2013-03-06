@@ -16,12 +16,12 @@ class Executor
 private:
 	pthread_t thread_;
 	int cpu_;
-	bool exit_;
+	int exit_;
 	queue<Partition*> *active_;
 	static void* execute(void *args);
 
 public:
-	Executor() {};
+	Executor() {exit_ = false;}
 	void start();
 	void stop();
 

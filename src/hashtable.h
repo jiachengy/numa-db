@@ -15,7 +15,6 @@ struct Entry
 	val_t val;
 };
 
-
 class HashTable
 {
  protected:
@@ -43,6 +42,17 @@ class LocalAggrTable : public HashTable
 	
  public:
 	LocalAggrTable(size_t capacity)
+		: HashTable(capacity) {}
+
+	void Aggregate(key_t key, val_t val);
+
+};
+
+class GlobalAggrTable : public HashTable
+{
+ private:
+ public:
+	GlobalAggrTable(size_t capacity)
 		: HashTable(capacity) {}
 
 	void Aggregate(key_t key, val_t val);

@@ -2,7 +2,7 @@
 #include "hashtable.h"
 #include "partition.h"
 
-#define CARDINALITY 10000
+#define CARDINALITY 100
 
 void LocalAggregation(Block block, Partition *out)
 {
@@ -14,6 +14,26 @@ void LocalAggregation(Block block, Partition *out)
 	}
 
 	LocalAggrTable *ht = (LocalAggrTable*)htout->hashtable;
+
+	// hash aggregation
+    key_t *keys = block.data;
+	rid_t *rids = block.rids;
+	for (unsigned int i = 0; i < block.size; i++) {
+		ht->Aggregate(keys[i], rids[i]);
+	}
+}
+
+
+void GlobalAggregation(Block block, Partition *out)
+{
+	HTPartition *htout = (HTPartition*)out;
+	
+	if (htout->hashtable == NULL) {
+		htout->hashtable = new GlobalAggrTable(CARDINALITY);
+		LOG(INFO) << "Hash table built.";
+	}
+
+	GlobalAggrTable *ht = (GlobalAggrTable*)htout->hashtable;
 
 	// hash aggregation
     key_t *keys = block.data;

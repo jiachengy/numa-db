@@ -10,17 +10,17 @@
 
 using namespace std;
 
+QueryEngine qe;
+
 int main(int argc, char *argv[])
 {
 	google::InitGoogleLogging(argv[0]);
 	FLAGS_logtostderr = true;
 
-	size_t nthreads = 4;
+	size_t nthreads = 1;
 	
 	Optimizer optimizer;
 	Plan *plan = optimizer.Compile(nthreads);
 
-	QueryEngine qe;
 	qe.Query(plan);
-
 }

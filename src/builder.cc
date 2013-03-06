@@ -20,12 +20,12 @@ Partition* PartitionBuilder::Build(size_t sz, int cpu, PTable *table)
 	p->size = sz;
 	p->table = table;
 
-	//	unsigned int seed = time(NULL);	
+	unsigned int seed = time(NULL);	
 	data_t *data = (data_t*)alloc(sz * sizeof(data_t));
 	rid_t *rids = (rid_t*)alloc(sz * sizeof(rid_t));
 	for (unsigned int i = 0; i < sz; i++) {
-		//		data[i] = rand_r(&seed);
-		data[i] = i;
+		data[i] = rand_r(&seed) % 40;
+		//		data[i] = i;
 		rids[i] = i;
 	}
 	p->data = data;

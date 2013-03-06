@@ -56,4 +56,20 @@ void LocalAggrTable::Aggregate(key_t key, val_t value)
 }
 
 
+// Waiting to be tuned
+void GlobalAggrTable::Aggregate(key_t key, val_t value)
+{
+	uint32_t h = hash32(key) % capacity_;
+	
+	while (entries_[h].key != 0 && entries_[h].key != key)
+		h = (h + 1) % capacity_;
+
+	if (entries_[h].key == 0)
+		entries_[h].key = key;
+
+	// Atomic add
+	__sync_add_and_fetch(&entries_[h].val, value);
+}
+
+
 
