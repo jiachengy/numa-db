@@ -69,16 +69,11 @@ GlobalAggrTable::GlobalAggrTable(size_t capacity)
 	capacity_ = capacity;
 	entries_ = (GlobalEntry*)alloc(capacity * sizeof(GlobalEntry));
 	memset(entries_, 0, capacity * sizeof(GlobalEntry));
-	for (unsigned int i = 0; i < capacity_; i++)
-		mutex_init(&entries_[i].lock);
 }
 
 
 GlobalAggrTable::~GlobalAggrTable()
 {
-	for (unsigned int i = 0; i < capacity_; i++)
-		mutex_destroy(&entries_[i].lock);
-
 	if (entries_ != NULL)
 		dealloc(entries_, capacity_ * sizeof(GlobalEntry));
 }
@@ -95,43 +90,30 @@ val_t GlobalAggrTable::Get(data_t key)
 void GlobalAggrTable::Aggregate(data_t key, val_t value)
 {
 	uint32_t h = hash32(key) % capacity_;
-	GlobalEntry *entry = &entries_[h];
 
-	bool done = false;
-	if (entry->key == 0) {
-		mutex_lock(&entry->lock);
-		if (entry->key == 0) {
-			entry->key = key;
-			entry->val = value;
-			done = true;
+	for (;;) {
+		// check if the key matches with bucket
+		if (entries_[h].key == key) {
+			// update and leave
+			atomic_add(&entries_[h].count, 1);
+			atomic_add(&entries_[h].val, value);
+			return;
 		}
-		mutex_unlock(&entry->lock);
-	}
-	
-	uint32_t first = h;
-	while (!done) {
-		h = first;
-
-		while (entries_[h].key != 0 && entries_[h].key != key) {
-			h = (h + 1) % capacity_;
-		}
-		
-		entry = &entries_[h];
-		
-		if (entry->key == key) {
-			atomic_add_32(&entry->val, value);
-			done = true;
-		}
-		else {
-			mutex_lock(&entry->lock);
-			if (entry->key == 0) {
-				entry->key = key;
-				entry->val = value;
-				done = true;
+		// check if bucket is empty
+		if (entries_[h].key == 0) {
+			// check if you are the first to update
+			if (__sync_bool_compare_and_swap(&entries_[h].key, 0, key)) {
+				// update and leave
+				atomic_add(&entries_[h].count, 1);
+				atomic_add(&entries_[h].val, value);
+				return;
 			}
-			mutex_unlock(&entry->lock);
+			// the bucket is not yours, but go back check if same key
+			h--;
 		}
-	}
+		// reached the end of the table ? -> restart
+		if (++h == capacity_) h = 0;
+    } 
 }
 
 

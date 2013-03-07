@@ -18,7 +18,7 @@ struct GlobalEntry
 {
 	volatile data_t key;
 	volatile val_t val;
-	Mutex lock;
+	uint32_t count;
 };
 
 class HashTable
