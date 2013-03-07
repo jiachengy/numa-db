@@ -11,6 +11,11 @@
 
 #include "util.h"
 
+int num_numa_nodes(void)
+{
+	return numa_num_configured_nodes();
+}
+
 int cpus(void)
 {
 	char cpu_name[40];
@@ -41,6 +46,17 @@ void* alloc(size_t sz)
 {
 	return numa_alloc_local(sz);
 }
+
+void* alloc_on_node(size_t sz, int node)
+{
+	return numa_alloc_onnode(sz, node);
+}
+
+void* alloc_interleaved(size_t sz)
+{
+	return numa_alloc_interleaved(sz);
+}
+
 
 void dealloc(void *p, size_t sz)
 {

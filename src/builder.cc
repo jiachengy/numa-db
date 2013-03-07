@@ -14,9 +14,7 @@ Partition* PartitionBuilder::Build(size_t sz, int cpu, PTable *table)
 {
 	cpu_bind(cpu);
 
-	Partition *p = new Partition;
-	p->node = node_of_cpu(cpu);
-	p->cpu = cpu;
+	Partition *p = new Partition(node_of_cpu(cpu), cpu);
 	p->size = sz;
 	p->table = table;
 
@@ -24,7 +22,7 @@ Partition* PartitionBuilder::Build(size_t sz, int cpu, PTable *table)
 	data_t *data = (data_t*)alloc(sz * sizeof(data_t));
 	rid_t *rids = (rid_t*)alloc(sz * sizeof(rid_t));
 	for (unsigned int i = 0; i < sz; i++) {
-		data[i] = rand_r(&seed) % 40 + 1;
+		data[i] = rand_r(&seed) % ngroups + 1;
 		//		data[i] = i;
 		rids[i] = i;
 	}

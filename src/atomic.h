@@ -19,7 +19,7 @@ inline void atomic_add(volatile uint32_t *p, uint32_t v)
 		:: "r"(v), "r"(p) : "cc", "memory");
 }
 
-/* inline void atomic_add_32(volatile val_t *des, int32_t src) */
+/* inline void atomic_add(volatile val_t *des, int32_t src) */
 /* { */
 /* 	__asm__ __volatile__("spin0:\tmovl %0, %%eax\n\t" */
 /* 		"movl %%eax, %%edx\n\t" */

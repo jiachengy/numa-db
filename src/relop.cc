@@ -1,15 +1,15 @@
-#include "glog/logging.h"
+#include <glog/logging.h>
+#include <stdlib.h>
 #include "hashtable.h"
 #include "partition.h"
-
-#define CARDINALITY 100
+#include "util.h"
 
 void LocalAggregation(Block block, Partition *out)
 {
 	HTPartition *htout = (HTPartition*)out;
 	
 	if (htout->hashtable == NULL) {
-		htout->hashtable = new LocalAggrTable(CARDINALITY);
+		htout->hashtable = new LocalAggrTable(htout->ngroups_ * 4, (htout->node+1) % num_numa_nodes());
 		LOG(INFO) << "Hash table built.";
 	}
 
@@ -22,13 +22,12 @@ void LocalAggregation(Block block, Partition *out)
 	}
 }
 
-
 void GlobalAggregation(Block block, Partition *out)
 {
 	HTPartition *htout = (HTPartition*)out;
 	
 	if (htout->hashtable == NULL) {
-		htout->hashtable = new GlobalAggrTable(CARDINALITY);
+		htout->hashtable = new GlobalAggrTable(htout->ngroups_ * 4);
 		LOG(INFO) << "Hash table built.";
 	}
 

@@ -6,4 +6,5 @@
 void LocalAggregation(Block block, Partition *out);
 void GlobalAggregation(Block block, Partition *out);
 
+
 #endif // RELOP_H_

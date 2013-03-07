@@ -33,8 +33,9 @@ struct Block
 class Partition
 {
  public:
-	Partition() {
-		node = cpu = -1;
+	Partition(int node, int cpu) {
+		this->node = node;
+		this->cpu = cpu;
 		ready = done = false;
 		shared = sorted = false;
 		pkey = 0;
@@ -50,14 +51,14 @@ class Partition
 	}
 
 	Block Next() {
-		size_t sz = BLOCK_SIZE;
+		size_t sz = block_size;
 		int pos = curpos;
 		if (curpos + sz > size) {
 			sz = size - curpos;
 			curpos = -1;
 		}
 		else
-			curpos += BLOCK_SIZE;
+			curpos += block_size;
 		return Block(data+pos, rids+pos, sz);
 	}
 
@@ -100,12 +101,14 @@ class Partition
 
 class HTPartition : public Partition
 {
+ private:
  public:
-	HTPartition()
-		: Partition() {
+ HTPartition(int node, int cpu, size_t ngroups)
+	 : Partition(node, cpu) {
+		ngroups_ = ngroups;
 		hashtable = NULL;
 	}
-
+	size_t ngroups_;
 	HashTable *hashtable;
 };
 

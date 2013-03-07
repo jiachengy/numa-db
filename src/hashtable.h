@@ -48,8 +48,7 @@ class LocalAggrTable : public HashTable
  private:
 	
  public:
-	LocalAggrTable(size_t capacity)
-		: HashTable(capacity) {}
+	LocalAggrTable(size_t capacity, int node);
 
 	void Aggregate(data_t key, val_t val);
 

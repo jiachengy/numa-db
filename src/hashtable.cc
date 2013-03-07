@@ -51,6 +51,20 @@ void HashTable::Put(data_t key, val_t value)
 	entries_[h].val = value;
 }
 
+LocalAggrTable::LocalAggrTable(size_t capacity, int node)
+{
+	capacity_ = capacity;
+	if (local) {
+		entries_ = (Entry*)alloc(capacity * sizeof(Entry));
+		LOG(INFO) << "Allcocating local";
+	}
+	else {
+		entries_ = (Entry*)alloc_on_node(capacity * sizeof(Entry), node);
+		LOG(INFO) << "Allcocating on node " << node;
+	}
+	memset(entries_, 0, capacity * sizeof(Entry));
+}
+
 
 void LocalAggrTable::Aggregate(data_t key, val_t value)
 {
@@ -67,7 +81,7 @@ void LocalAggrTable::Aggregate(data_t key, val_t value)
 GlobalAggrTable::GlobalAggrTable(size_t capacity)
 {
 	capacity_ = capacity;
-	entries_ = (GlobalEntry*)alloc(capacity * sizeof(GlobalEntry));
+	entries_ = (GlobalEntry*)alloc_interleaved(capacity * sizeof(GlobalEntry));
 	memset(entries_, 0, capacity * sizeof(GlobalEntry));
 }
 
@@ -87,10 +101,11 @@ val_t GlobalAggrTable::Get(data_t key)
 	return entries_[h].val;
 }
 
+
+// 0 is a special key
 void GlobalAggrTable::Aggregate(data_t key, val_t value)
 {
 	uint32_t h = hash32(key) % capacity_;
-
 	for (;;) {
 		// check if the key matches with bucket
 		if (entries_[h].key == key) {

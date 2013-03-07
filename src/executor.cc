@@ -18,6 +18,10 @@ void* Executor::execute(void *args)
 
 	while (!active->empty()) {
 		Partition *current = active->front();
+		HTPartition *out = (HTPartition*)current->output;
+		out->hashtable = new LocalAggrTable(out->ngroups_ * 4, (out->node+1) % num_numa_nodes());
+
+		long t = micro_time();
 		while (!current->Eop()) {
 			Block b = current->Next();
 			if (b.empty())
@@ -25,7 +29,7 @@ void* Executor::execute(void *args)
 
 			current->exec(b, current->output);	
 		}
-
+		LOG(INFO) << "Time: " << (micro_time() - t) / 1000 << "msec";
 		LOG(INFO) << "Thread " << self->cpu_ << " local aggregation done.";
 		active->pop();
 	}
