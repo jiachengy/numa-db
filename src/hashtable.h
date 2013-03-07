@@ -4,15 +4,21 @@
 #include <stdint.h>
 #include <unistd.h>
 
+#include "numadb.h"
 #include "hash.h"
-
-typedef int32_t key_t;
-typedef int32_t val_t;
+#include "atomic.h"
 
 struct Entry
 {
-	key_t key;
-	val_t val;
+	volatile data_t key;
+	volatile val_t val;
+};
+
+struct GlobalEntry
+{
+	volatile data_t key;
+	volatile val_t val;
+	Mutex lock;
 };
 
 class HashTable
@@ -23,11 +29,12 @@ class HashTable
 
 	Entry *entries_;
  public:
+	HashTable();
 	HashTable(size_t capacity);
 	virtual ~HashTable();
 
-	val_t Get(key_t key);
-	void Put(key_t key, val_t val);
+    val_t Get(data_t key);
+	void Put(data_t key, val_t val);
 	size_t size() { return size_; }
 	size_t capacity() { return capacity_; }
 
@@ -44,18 +51,20 @@ class LocalAggrTable : public HashTable
 	LocalAggrTable(size_t capacity)
 		: HashTable(capacity) {}
 
-	void Aggregate(key_t key, val_t val);
+	void Aggregate(data_t key, val_t val);
 
 };
 
 class GlobalAggrTable : public HashTable
 {
  private:
+	// override the parent
+	GlobalEntry *entries_;
  public:
-	GlobalAggrTable(size_t capacity)
-		: HashTable(capacity) {}
-
-	void Aggregate(key_t key, val_t val);
+	GlobalAggrTable(size_t capacity);
+	~GlobalAggrTable();
+	val_t Get(data_t key);
+	void Aggregate(data_t key, val_t val);
 
 };
 

@@ -15,8 +15,7 @@ void LocalAggregation(Block block, Partition *out)
 
 	LocalAggrTable *ht = (LocalAggrTable*)htout->hashtable;
 
-	// hash aggregation
-    key_t *keys = block.data;
+    data_t *keys = block.data;
 	rid_t *rids = block.rids;
 	for (unsigned int i = 0; i < block.size; i++) {
 		ht->Aggregate(keys[i], rids[i]);
@@ -35,8 +34,7 @@ void GlobalAggregation(Block block, Partition *out)
 
 	GlobalAggrTable *ht = (GlobalAggrTable*)htout->hashtable;
 
-	// hash aggregation
-    key_t *keys = block.data;
+    data_t *keys = block.data;
 	rid_t *rids = block.rids;
 	for (unsigned int i = 0; i < block.size; i++) {
 		ht->Aggregate(keys[i], rids[i]);

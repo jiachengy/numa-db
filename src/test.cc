@@ -7,6 +7,7 @@
 #include "plan.h"
 #include "optimizer.h"
 #include "engine.h"
+#include "atomic.h"
 
 using namespace std;
 
