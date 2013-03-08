@@ -19,8 +19,21 @@ Partition* PartitionBuilder::Build(size_t sz, int cpu, PTable *table)
 	p->table = table;
 
 	unsigned int seed = time(NULL);	
-	data_t *data = (data_t*)alloc(sz * sizeof(data_t));
-	rid_t *rids = (rid_t*)alloc(sz * sizeof(rid_t));
+	data_t *data;
+	rid_t *rids;
+
+	if (local2) {
+		data = (data_t*)alloc(sz * sizeof(data_t));
+		rids = (rid_t*)alloc(sz * sizeof(rid_t));
+	}
+	else {
+		data = (data_t*)alloc_on_node(sz * sizeof(data_t), (node_of_cpu(cpu)+1)%num_numa_nodes());
+		rids = (rid_t*)alloc_on_node(sz * sizeof(rid_t), (node_of_cpu(cpu)+1) % num_numa_nodes());
+		LOG(INFO) << "Allocate base on node " << (node_of_cpu(cpu) + 1)%num_numa_nodes();
+	}
+	memset(data, 0, sz * sizeof(data_t));
+	memset(rids, 0, sz * sizeof(rid_t));
+
 	for (unsigned int i = 0; i < sz; i++) {
 		data[i] = rand_r(&seed) % ngroups + 1;
 		//		data[i] = i;
@@ -50,7 +63,11 @@ PTable* TableBuilder::Build(size_t nparts, size_t psize)
 	pthread_t threads[nparts];
 	for (unsigned int i = 0; i < nparts; i++) {
 		args[i].size = psize;
-		args[i].cpu = i;
+
+		if (roundrobin)
+			args[i].cpu = rrobin[i];
+		else
+			args[i].cpu = i;
 		args[i].table = table;
 		args[i].builder = &pbuilder_;
 		pthread_create(&threads[i], NULL, &TableBuilder::build, (void*)&args[i]);

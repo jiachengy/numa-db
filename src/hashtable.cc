@@ -5,6 +5,7 @@
 
 #include "atomic.h"
 #include "util.h"
+#include "numadb.h"
 
 using namespace std;
 
@@ -81,7 +82,10 @@ void LocalAggrTable::Aggregate(data_t key, val_t value)
 GlobalAggrTable::GlobalAggrTable(size_t capacity)
 {
 	capacity_ = capacity;
-	entries_ = (GlobalEntry*)alloc_interleaved(capacity * sizeof(GlobalEntry));
+	if (local)
+		entries_ = (GlobalEntry*)alloc_on_node(capacity * sizeof(GlobalEntry), 0);
+	else
+		entries_ = (GlobalEntry*)alloc_on_node(capacity * sizeof(GlobalEntry), 1);
 	memset(entries_, 0, capacity * sizeof(GlobalEntry));
 }
 

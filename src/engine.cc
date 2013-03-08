@@ -9,7 +9,7 @@ void QueryEngine::initpipe(Plan *plan)
 		PTable *t = plan->leaves[i];
 		for (unsigned int pid = 0; pid < t->size(); pid++) {
 			Partition *p = t->GetPartition(pid);
-			actives_[p->cpu].push(p);
+			actives_[pid].push(p);
 		}
 	}
 }
@@ -17,7 +17,7 @@ void QueryEngine::initpipe(Plan *plan)
 void QueryEngine::start()
 {
 	for (unsigned int i = 0; i < nworkers_; i++) {
-		executors_[i].cpu_ = i;
+		executors_[i].cpu_ = actives_[i].front()->cpu;
 		executors_[i].active_ = &actives_[i];
 		executors_[i].start();
 	}

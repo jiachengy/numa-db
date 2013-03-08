@@ -29,6 +29,17 @@ int cpus(void)
 	return cpu_num;
 }
 
+void memory_bind(int cpu_id)
+{
+	char numa_id_str[12];
+	struct bitmask *numa_node;
+	int numa_id = numa_node_of_cpu(cpu_id);
+	sprintf(numa_id_str, "%d", numa_id);
+	numa_node = numa_parse_nodestring(numa_id_str);
+	numa_set_membind(numa_node);
+	numa_free_nodemask(numa_node);
+}
+
 void cpu_bind(int cpu)
 {
 	cpu_set_t cpu_set;
@@ -47,14 +58,22 @@ void* alloc(size_t sz)
 	return numa_alloc_local(sz);
 }
 
+// better not to use this feature
 void* alloc_on_node(size_t sz, int node)
 {
 	return numa_alloc_onnode(sz, node);
 }
 
+
+// be careful when used in global thread
 void* alloc_interleaved(size_t sz)
 {
-	return numa_alloc_interleaved(sz);
+	bitmask *prev = numa_get_membind(); // save prev mask
+	numa_set_membind(numa_all_nodes_ptr); // rebind to all nodes
+	void *data = numa_alloc_interleaved(sz);
+	// restore prev mask
+	numa_set_membind(prev);
+	return data;
 }
 
 

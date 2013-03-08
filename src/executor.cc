@@ -18,12 +18,11 @@ void* Executor::execute(void *args)
 
 	while (!active->empty()) {
 		Partition *current = active->front();
-		HTPartition *out = (HTPartition*)current->output;
-		out->hashtable = new LocalAggrTable(out->ngroups_ * 4, (out->node+1) % num_numa_nodes());
 
 		long t = micro_time();
 		while (!current->Eop()) {
 			Block b = current->Next();
+
 			if (b.empty())
 				break;
 

@@ -9,7 +9,7 @@ void LocalAggregation(Block block, Partition *out)
 	HTPartition *htout = (HTPartition*)out;
 	
 	if (htout->hashtable == NULL) {
-		htout->hashtable = new LocalAggrTable(htout->ngroups_ * 4, (htout->node+1) % num_numa_nodes());
+		htout->hashtable = new LocalAggrTable(htout->ngroups_ * 4, (htout->node+hops) % num_numa_nodes());
 		LOG(INFO) << "Hash table built.";
 	}
 
