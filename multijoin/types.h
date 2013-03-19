@@ -19,4 +19,11 @@ struct block_t {
 };
 
 
+enum OpType {
+	OpNone,
+	OpPartition,
+	OpBuild,
+	OpProbe,
+};
+
 #endif // TYPES_H_

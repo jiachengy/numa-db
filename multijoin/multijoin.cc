@@ -12,7 +12,8 @@ void* work_thread(void *param)
 	int tid = args->tid;
 	cpu_bind(tid);
 
-	Taskqueue *queue = args->queue;
+	// node shared queue
+	Taskqueue *queue = args->node->queue;
 	
 	while (queue->Empty()) {
 		Task *task = queue->Fetch();
@@ -24,47 +25,28 @@ void* work_thread(void *param)
 	return NULL;
 }
 
+
 // two way hash join
-void hashjoin(Table *relR, Table *relS, int nthreads) // ncpus?
+void Hashjoin(int nthreads)
 {
-	// init 
-	global_t global;
-	thread_t *args = (thread_t*)malloc(sizeof(thread_t) * nthreads);
+	// init the environment
+	Environment *env = new Environment(nthreads);
 
-	global.nthreads = nthreads;
-	global.nnodes = numa_max_node();
-	global.nodes = (node_t*)malloc(sizeof(node_t) * global.nnodes);
-	
-	thread_t *thread = args;
-	int tid = 0;
-	for (int i = 0; i < global.nnodes; i++) {
-		node_t *node = &global.nodes[i];
-		node->nthreads = nthreads / global.nnodes;
 
-		node->locals = thread;
-		node->next_node = (i + 1) % global.nnodes;
-
-		for (int j = 0; j < node->nthreads; j++, thread++, tid++) {
-			thread->tid = tid;
-			thread->node = node;
-			thread->global = &global;
-		}
-	}
+	// init the task queues
+	env->CreateJoinTasks();
 
 
 	pthread_t threads[nthreads];
 	// start threads
 	for (int i = 0; i < nthreads; i++) {
-		pthread_create(&threads[i], NULL, work_thread, (void*)&args[i]);
+		pthread_create(&threads[i], NULL, work_thread, (void*)&env->threads[i]);
 	}
-
 
 	// join threads
 	for (int i = 0; i < nthreads; i++) {
 		pthread_join(threads[i], NULL);
 	}
 
-	// clean up
-	free(args);
-	free(global.nodes);
+	delete env;
 }

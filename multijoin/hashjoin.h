@@ -2,9 +2,11 @@
 #define HASHJOIN_H_
 
 #include "types.h"
-#include "multijoin.h"
-#include "task.h"
+#include "taskqueue.h" // Task
+//#include "env.h"
 
+
+/*
 class PartitionTask : public Task
 {
  private:
@@ -82,6 +84,6 @@ class ProbeTask : public Task
 	}
 
 };
-
+*/
 
 #endif // HASHJOIN_H_

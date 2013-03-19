@@ -2,31 +2,41 @@
 #define TASKQUEUE_H_
 
 #include <list>
-#include <map>
+#include <vector>
 
+class Task;
+class Tasklist;
 class Taskqueue;
 
+#include "env.h"
 #include "table.h"
-#include "task.h"
 
-// A task queue for a single task
-class Simplequeue
+class Task
+{
+ public:
+	virtual void Run(thread_t *args) = 0;
+};
+
+
+class Tasklist
 {
  private:
-	std::list<Task*> tasks_;
+	std::list<Task> tasks_;
 	Table *in_;
 	Table *out_;
+	int priority_;
  public:
-	Simplequeue(Table *in, Table *out) {
+	Tasklist(Table *in, Table *out, int priority) {
 		in_ = in;
 		out_ = out;
+		priority_ = priority;
 	}
 
 	bool Empty() {
 		return tasks_.empty();
 	}
 
-	void Add(Task *task) {
+	void AddTask(Task *task) {
 		tasks_.push_back(task);
 	}
 
@@ -37,25 +47,27 @@ class Simplequeue
 	}
 };
 
-
-// All threads share a same task queue
-// A task queue is composed of several subqueues
-// Partition R, Build R, Partition S, Probe S....
-// Each small task has a default
-// blocked operators will not be scheduled
-// For example, though Build R is before Partition S
-// if will only be scheduled after it is waken up
-// from the block queues.
 class Taskqueue
 {
  private:
-	Simplequeue *current_;
-	std::list<Simplequeue*> actives_;
-	std::map<int, Simplequeue*> queues_;
+	Tasklist *current_;
+	std::list<Tasklist*> actives_;
+	std::vector<Tasklist*> queues_;
 
  public:
+	Taskqueue() {}
+
+	~Taskqueue() {
+		for (int i = 0; i < queues_.size(); i++)
+			delete queues_[i];
+	}
+
 	bool Empty() {
 		return current_ == NULL;
+	}
+
+	void AddList(Tasklist *list) {
+		queues_.push_back(list);
 	}
 
 	void Add(int taskid, Task *task) {
@@ -74,19 +86,16 @@ class Taskqueue
 		return next;
 	}
 
-
-	// after partition R is finished
-	// we wake up build R in the task queue
-
-	// wake up the subqueue
-	// and append it at the beginning
 	void promote(int taskid) {
 		actives_.push_front(queues_[taskid]);
 	}
 
-	// wake up the subqueue
-	// and append it at the end
-	void wakeup(int taskid) {
+
+	// Unblock
+	// insert the tasklist into appropriate place
+	// according to its priority
+
+	void Wakeup(int taskid) {
 		actives_.push_back(queues_[taskid]);
 	}
 };

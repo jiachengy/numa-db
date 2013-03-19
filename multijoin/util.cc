@@ -11,7 +11,7 @@
 
 #include "util.h"
 
-int cpus(void)
+uint32_t cpus(void)
 {
 	char cpu_name[40];
 	struct stat st;
@@ -41,6 +41,17 @@ void cpu_bind(int cpu)
 	CPU_ZERO(&cpu_set);
 	CPU_SET(cpu, &cpu_set);
 	pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpu_set);
+}
+
+int get_running_cpu()
+{
+	return sched_getcpu();
+}
+
+int get_running_node()
+{
+	int cpu = sched_getcpu();
+	return node_of_cpu(cpu);
 }
 
 int node_of_cpu(int cpu)
