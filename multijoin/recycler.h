@@ -1,22 +1,27 @@
 #ifndef RECYCLER_H_
 #define RECYCLER_H_
 
-
+#include <vector>
 #include <list>
-#include "partition.h"
+#include "table.h"
+
+using namespace std;
 
 class Recycler
 {
  private:
-	std::list<Partition*> free_[4];
+	size_t alloc_size_;
+	uint32_t nnodes_;
+	vector<list<Partition*> > freelists_;
+	void Alloc(int node);
+
  public:
-	void Alloc(size_t nslots);
-	
+	Recycler(size_t alloc_size, uint32_t nnodes);
+	~Recycler();	
 	// get an empty partition
-	Partition *GetEmptyPartition(int node);
-	
-	// push back the partition to allow recycling
-	void Recycle(int node, Partition *part);
+	Partition* GetSlot(int node);	
+	// put back the partition for recycling
+	void Putback(Partition *p);
 };
 
 #endif // RECYCLER_H_

@@ -5,7 +5,8 @@
 
 uint32_t cpus();
 void cpu_bind(int cpu);
-void memory_bind(int cpu_id);
+void cpu_membind(int cpu);
+void node_membind(int node);
 
 int get_running_cpu();
 int get_running_node();

@@ -4,12 +4,15 @@
 #include <string.h>
 #include <list>
 #include <cassert>
+#include <glog/logging.h>
 
 class Partition;
 class Table;
 
 #include "types.h" // OpType
 #include "util.h" // get_running_node
+
+using namespace std;
 
 class Partition {
  private:
@@ -41,7 +44,8 @@ class Partition {
 	}
 
 	~Partition() {
-		dealloc(tuples_, sizeof(tuple_t) * kPartitionSize);
+		if (tuples_)
+			dealloc(tuples_, sizeof(tuple_t) * kPartitionSize);
 	}
 
 	void Reset() { 	// used by the recycler
@@ -53,8 +57,7 @@ class Partition {
 	}
 
 	// for efficiency purpose, we expose the 
-	// raw data and allow us to set the size
-	// at once
+	// raw data and allow us to set the size at once
 	tuple_t *tuples() { return tuples_; }
 	void set_size(size_t sz) { size_ = sz; }
 	size_t size() { return size_; }
@@ -74,10 +77,10 @@ class Table {
 	int id_;
 	OpType type_;
 	
-	std::list<Partition*> *pnodes_;
+	std::vector<std::list<Partition*> > pnodes_;
 	uint32_t nnodes_;
 
-	std::list<Partition*> *pkeys_;
+	std::vector<std::list<Partition*> > pkeys_;
 	uint32_t nkeys_;
 	
 	bool ready_;
@@ -96,13 +99,11 @@ class Table {
 		type_ = type;
 
 		nkeys_ = nkeys;
-		if (nkeys)
-			pkeys_ = (std::list<Partition*>*)malloc(sizeof(std::list<Partition*>) * nkeys);
-		else
-			pkeys_ = NULL;
+		if (nkeys_)
+			pkeys_.resize(nkeys);
 
 		nnodes_ = nnodes;
-		pnodes_ = (std::list<Partition*>*)malloc(sizeof(std::list<Partition*>) * nnodes);
+		pnodes_.resize(nnodes);
 		
 		nbuffers_ = nbuffers;
 		done_count_ = 0;
@@ -114,14 +115,17 @@ class Table {
 
 	~Table() {
 		free(buffers_);
-		if (nkeys_)
-			free(pkeys_);
-		free(pnodes_);
+		for (uint32_t node = 0; node < nnodes_; node++) {
+			list<Partition*> pnode = pnodes_[node];
+			for (list<Partition*>::iterator it = pnode.begin();
+				 it != pnode.end(); it++) {
+				delete *it;
+			}
+		}
 	}
 
 	void AddPartition(Partition *p) {
 		nparts_++;
-
 		pnodes_[p->node()].push_back(p);
 
 		// if it has a partition key

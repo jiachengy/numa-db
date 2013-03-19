@@ -28,7 +28,6 @@ void* TableBuilder::build(void *params)
 	cpu_bind(arg->cpu);
 	PartitionBuilder *pbuilder = arg->builder;
 
-
 	for (uint32_t i = 0; i < arg->nparts; i++) {
 		Partition *p = pbuilder->Build(Partition::kPartitionSize);
 		arg->partitions[i] = p;
@@ -39,6 +38,8 @@ void* TableBuilder::build(void *params)
 
 void TableBuilder::Build(Table *table, size_t size)
 {
+	LOG(INFO) << "Building tables.";
+
 	uint32_t npartitions = size / Partition::kPartitionSize;
 
 	uint32_t ncpus = cpus();
@@ -59,8 +60,12 @@ void TableBuilder::Build(Table *table, size_t size)
 		for (uint32_t p = 0; p < args[i].nparts; p++)
 			table->AddPartition(args[i].partitions[p]);
 
+	LOG(INFO) << "Add partition done.";
+
 	for (uint32_t i = 0; i < ncpus; i++)
 		free(args[i].partitions);
+
+	LOG(INFO) << "Building done.";
 }
 
 

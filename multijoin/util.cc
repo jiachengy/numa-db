@@ -24,7 +24,7 @@ uint32_t cpus(void)
 	return cpu_num;
 }
 
-void memory_bind(int cpu_id)
+void cpu_membind(int cpu_id)
 {
 	char numa_id_str[12];
 	struct bitmask *numa_node;
@@ -33,6 +33,13 @@ void memory_bind(int cpu_id)
 	numa_node = numa_parse_nodestring(numa_id_str);
 	numa_set_membind(numa_node);
 	numa_free_nodemask(numa_node);
+}
+
+void node_membind(int node)
+{
+	numa_run_on_node(node);
+	struct bitmask *numa_node = numa_get_run_node_mask();
+	numa_set_membind(numa_node);
 }
 
 void cpu_bind(int cpu)
