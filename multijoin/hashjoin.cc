@@ -12,73 +12,75 @@ void PartitionTask::ProcessBlock(thread_t *args, block_t block) {
 	memset(hist, 0, fanout * sizeof(uint32_t));
 
 	// histogram
-	tuple_t *tuple = part_[block.offset].tuples_;
+	tuple_t *tuple = part_[block.offset].tuples();
 	for (uint32_t i = 0; i < block.size; i++, tuple++) {
 		uint32_t idx = HASH_BIT_MODULO(tuple->key, mask, offset_);
 		hist[idx]++;
 	}
 
 
-	Partition *dst[fanout];
+	tuple_t *dst[fanout];
 	
 	// check current output buffer
-	for (uint32_t i = 0; i < fanout; i++) {
-		int buffer_id = args->tid * fanout + i;
-		Partition *p = out_->buffers_[buffer_id];
+	for (uint32_t index = 0; index < fanout; index++) {
+		int buffer_id = args->tid * fanout + index;
+		Partition *p = out_->GetBuffer(buffer_id);
 
 		// if buffer does not exists
 		// or if not enough space
-		if (!p || PARTITION_SIZE - p->size_ < hist[i]) {
+		if (!p || Partition::kPartitionSize - p->size() < hist[index]) {
 			// if the buffer is full
 			if (p) {
 				out_->AddPartition(p);
 
-				Task *ntask = NULL;
-				if (out_->type() == OpBuild) {
-					ntask = new BuildTask();
-				}
-				else if (out_->type() == OpProbe) {
-					ntask = new ProbeTask();
-				}
-				else {
-					LOG(INFO) << "Unexpected op type";
-				}
-				args->queue->Add(out_->id_, ntask);
+				//				Task *ntask = NULL;
+				// if (out_->type() == OpBuild) {
+				// 	ntask = new BuildTask();
+				// }
+				// else if (out_->type() == OpProbe) {
+				// 	ntask = new ProbeTask();
+				// }
+				// else {
+				// 	LOG(INFO) << "Unexpected op type";
+				// }
+				// args->queue->Add(out_->id_, ntask);
 			}
 
 			// create a new buffer
 			// switch the output buffer to the new one
-			Partition *np = new Partition();
-			out_->buffers_[buffer_id] = np;
+			Partition *np = new Partition(args->node_id, index);
+			out_->SetBuffer(buffer_id, np);
 			p = np;
 		}
-		dst[i] = p;
+		dst[index] = &p->tuples()[p->size()];
+		p->set_size(p->size() + hist[index]);
 	}
 
 	// second scan, partition and scatter
-	tuple = &part_->tuples_[block.offset];
+	tuple = &(part_->tuples()[block.offset]);
 	for (uint32_t i = 0; i < block.size; i++, tuple++) {
 		uint32_t idx = HASH_BIT_MODULO(tuple->key, mask, offset_);
-		dst[idx]->tuples_[dst[idx]->size_] = *tuple;
-		dst[idx]->size_++;
-		
+		*(dst[idx]++) = *(tuple++);
 	}
 }
 
-void PartitionTask::Unblock(thread_t *threads, int nthreads) {
-	for (int i = 0; i < nthreads; i++) {
-		threads[i].queue->promote(out_->id_);
+void PartitionTask::Unblock(thread_t* args)
+{
+	node_t *nodes = args->env->nodes();
+	for (int node = 0; node < args->env->nnodes(); node++) {
+		nodes[node].queue->Unblock(out_->id());
 	}
 }
 
 
-void PartitionTask::Run(thread_t *args) {
+void PartitionTask::Run(thread_t *args)
+{
 	// process the partition in blocks
 	uint32_t offset = 0;
-	while (offset < part_->size_) {
-		size_t sz = BLOCK_SIZE;
-		if (part_->size_ - offset < BLOCK_SIZE)
-			sz = part_->size_ - offset;
+	while (offset < part_->size()) {
+		size_t sz = Partition::kBlockSize;
+		if (part_->size() - offset < Partition::kBlockSize)
+			sz = part_->size() - offset;
 		block_t block;
 		block.offset = offset;
 		block.size = sz;
@@ -87,16 +89,14 @@ void PartitionTask::Run(thread_t *args) {
 		offset += sz;
 	}
 
-	part_->done_ = true;
+	part_->set_done();
 
-	// commit to the input table
-	// ask it if we are the last?
-	bool islast = in_->Commit();
+	in_->Commit();
 
 	// check if I am the last one to finish?
 	// if yes, promote all other threads
 	// if not, do nothing
-	if (islast) {
-		Unblock(args, args->global->nthreads);
+	if (in_->done()) {
+		Unblock(args);
 	}
 }

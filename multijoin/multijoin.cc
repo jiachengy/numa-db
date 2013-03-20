@@ -4,7 +4,6 @@
 #include "types.h"
 #include "taskqueue.h"
 #include "util.h"
-#include "multijoin.h"
 
 void* work_thread(void *param)
 {
@@ -27,20 +26,17 @@ void* work_thread(void *param)
 
 
 // two way hash join
-void Hashjoin(int nthreads)
+void Hashjoin(Table *relR, Table *relS, int nthreads)
 {
 	// init the environment
 	Environment *env = new Environment(nthreads);
-
-
 	// init the task queues
-	env->CreateJoinTasks();
-
+	env->CreateJoinTasks(relR, relS);
 
 	pthread_t threads[nthreads];
 	// start threads
 	for (int i = 0; i < nthreads; i++) {
-		pthread_create(&threads[i], NULL, work_thread, (void*)&env->threads[i]);
+		pthread_create(&threads[i], NULL, work_thread, (void*)&env->threads()[i]);
 	}
 
 	// join threads

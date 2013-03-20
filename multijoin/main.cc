@@ -15,26 +15,6 @@ int main(int argc, char *argv[])
 	FLAGS_logtostderr = true;
 
 
-	Recycler re(100, 4);
-
-	for (int i = 0; i < 200; i++) {
-		Partition *p = re.GetSlot(1);
-	}
-
-	for (int i = 0; i < 200; i++) {
-		Partition *p = re.GetSlot(2);
-	}
-
-
-	for (int i = 0; i < 200; i++) {
-		Partition *p = re.GetSlot(3);
-	}
-
-
-	for (int i = 0; i < 200; i++) {
-		Partition *p = re.GetSlot(0);
-	}
-
 	// Table *table = new Table(0, OpPartition, 4, 0, 64);
 	// TableBuilder tb;
 	

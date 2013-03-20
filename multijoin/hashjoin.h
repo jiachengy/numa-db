@@ -3,10 +3,8 @@
 
 #include "types.h"
 #include "taskqueue.h" // Task
-//#include "env.h"
+#include "env.h"
 
-
-/*
 class PartitionTask : public Task
 {
  private:
@@ -22,7 +20,7 @@ class PartitionTask : public Task
 	int nbits_; // radix bits per pass
 
 	void ProcessBlock(thread_t *args, block_t block);
-	void Unblock(thread_t *threads, int nthreads);
+	void Unblock(thread_t *args);
 
  public:
 	PartitionTask(Partition *part, int offset, int nbits, Table *out) {
@@ -40,6 +38,7 @@ class PartitionTask : public Task
 };
 
 
+/*
 class BuildTask : public Task
 {
  private:
