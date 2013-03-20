@@ -23,11 +23,12 @@ class PartitionTask : public Task
   void Finish(thread_t *args);
 
  public:
- PartitionTask(OpType type, Partition *part, int offset, int nbits, Table *out) : Task(type) {
+ PartitionTask(OpType type, Partition *part, Table *in, Table *out, int offset, int nbits) : Task(type) {
+    this->in_ = in;
+    this->out_ = out;
     this->part_ = part;
     this->offset_ = offset;
     this->nbits_ = nbits;
-    this->out_ = out;
   }
 
   virtual ~PartitionTask() {

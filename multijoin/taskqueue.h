@@ -70,6 +70,8 @@ class Taskqueue
 			delete queues_[i];
 	}
 
+    int active_size() { return actives_.size(); }
+
 	Tasklist* GetListByType(OpType type) {
 		for (list<Tasklist*>::iterator it = actives_.begin();
 			 it != actives_.end(); it++) {

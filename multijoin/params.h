@@ -4,7 +4,7 @@
 class Params
 {
  public:
-	static const int kNumRadixBits = 14;
+	static const int kNumRadixBits = 7;
 	static const int kNumPasses = 1; 
 
 	static const int kNumBitsPass1 = kNumRadixBits / kNumPasses;

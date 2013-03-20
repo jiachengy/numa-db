@@ -62,7 +62,7 @@ class Partition {
   block_t NextBlock() {
     size_t sz = kBlockSize;
     uint32_t pos = curpos_;
-    if (curpos_ + sz > size_) {
+    if (curpos_ + sz >= size_) {
       sz = size_ - curpos_;
       curpos_ = -1;
       set_done();
@@ -129,6 +129,10 @@ class Table {
   ~Table();
 
   void AddPartition(Partition *p) {
+    LOG(INFO) << "Partition: "<< p->node() << "," << p->key() << "," << p->size();
+    LOG(INFO) << "Table: "<< pnodes_.size() << "," << pkeys_.size();
+
+
     nparts_++;
     pnodes_[p->node()].push_back(p);
 

@@ -36,36 +36,37 @@ void* TableBuilder::build(void *params)
 	return NULL;
 }
 
-void TableBuilder::Build(Table *table, size_t size)
+void TableBuilder::Build(Table *table, size_t size, uint32_t nthreads)
 {
-	LOG(INFO) << "Building tables.";
-
 	uint32_t npartitions = size / Partition::kPartitionSize;
 
-	uint32_t ncpus = cpus();
-	BuildArg args[ncpus];
-	pthread_t threads[ncpus];
-	for (unsigned int i = 0; i < ncpus; i++) {
-		args[i].nparts = npartitions / ncpus;
-		args[i].cpu = i;
+    nthreads = npartitions < nthreads ? npartitions : nthreads;
+
+    // make sure each node has even number of partitions
+    assert(nthreads % num_numa_nodes() == 0); 
+    // make sure each thread has even size
+    assert(npartitions / nthreads * nthreads == npartitions);
+
+	BuildArg args[nthreads];
+	pthread_t threads[nthreads];
+	for (uint32_t i = 0; i < nthreads; i++) {
+		args[i].nparts = npartitions / nthreads;
+
+		args[i].cpu = cpu_of_thread_rr(i);
 		args[i].builder = &pbuilder_;
 		args[i].partitions = (Partition**)malloc(sizeof(Partition*) * args[i].nparts);
 		pthread_create(&threads[i], NULL, &TableBuilder::build, (void*)&args[i]);
 	}
 
-	for (uint32_t i = 0; i < ncpus; i++)
+	for (uint32_t i = 0; i < nthreads; i++)
 		pthread_join(threads[i], NULL);
 
-	for (uint32_t i = 0; i < ncpus; i++)
+	for (uint32_t i = 0; i < nthreads; i++)
 		for (uint32_t p = 0; p < args[i].nparts; p++)
 			table->AddPartition(args[i].partitions[p]);
 
-	LOG(INFO) << "Add partition done.";
-
-	for (uint32_t i = 0; i < ncpus; i++)
+	for (uint32_t i = 0; i < nthreads; i++)
 		free(args[i].partitions);
-
-	LOG(INFO) << "Building done.";
 }
 
 

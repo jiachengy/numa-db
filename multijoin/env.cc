@@ -7,7 +7,7 @@ using namespace std;
 Environment::Environment(int nthreads)
 {
   nthreads_ = nthreads;
-  nnodes_ = numa_max_node();
+  nnodes_ = num_numa_nodes();
   nodes_ = (node_t*)malloc(sizeof(node_t) * nnodes_);
   threads_ = (thread_t*)malloc(sizeof(thread_t) * nthreads);
   done_ = false;
@@ -27,6 +27,7 @@ Environment::Environment(int nthreads)
     thread_t *t = &threads_[tid];
     int cpu = cpu_of_thread_rr(tid); // round robin
     int node = node_of_cpu(cpu);
+    LOG(INFO) << "Thread " << tid << " is assigned to cpu[" << cpu <<"] and node[" << node << "]";
 
     t->tid = tid;
     t->cpu = cpu;
@@ -85,8 +86,10 @@ void Environment::TestPartition(Table *rt, Table *st)
     list<Partition*>& parts = rt->GetPartitionsByNode(node);
     for (list<Partition*>::iterator it = parts.begin(); 
          it != parts.end(); it++) {
-      partR->AddTask(new PartitionTask(OpPartition, *it, 0, Params::kNumBitsPass1, rparted));
+      partR->AddTask(new PartitionTask(OpPartition, *it, rt, rparted, 0, Params::kNumBitsPass1));
     }
+
+    LOG(INFO) << parts.size() << " partitions are added to tasklist on " << node;
     // parts = st->GetPartitionsByNode(node);
     // for (list<Partition*>::iterator it = parts.begin(); 
     //      it != parts.end(); it++) {
@@ -99,6 +102,8 @@ void Environment::TestPartition(Table *rt, Table *st)
 
     tq->Unblock(0);
     //    tq->Unblock(1);
+
+    LOG(INFO) << "Active size:" << tq->active_size();
   }
 
 }
@@ -137,12 +142,12 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
     list<Partition*>& parts = rt->GetPartitionsByNode(node);
     for (list<Partition*>::iterator it = parts.begin(); 
          it != parts.end(); it++) {
-      partR->AddTask(new PartitionTask(OpPartition, *it, 0, Params::kNumBitsPass1, rparted));
+      partR->AddTask(new PartitionTask(OpPartition, *it, rt, rparted, 0, Params::kNumBitsPass1));
     }
     parts = st->GetPartitionsByNode(node);
     for (list<Partition*>::iterator it = parts.begin(); 
          it != parts.end(); it++) {
-      partS->AddTask(new PartitionTask(OpPartition, *it, 0, Params::kNumBitsPass1, sparted));
+      partS->AddTask(new PartitionTask(OpPartition, *it, st, sparted, 0, Params::kNumBitsPass1));
     }
 
     Tasklist *buildR = new Tasklist(rparted, rhash, rparted->id(), rparted->id());

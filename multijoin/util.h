@@ -2,8 +2,16 @@
 #define UTIL_H_
 
 #include <stdint.h>
+#include <numa.h>
 
 uint32_t cpus();
+
+inline int num_numa_nodes()
+{
+  return numa_max_node() + 1;
+}
+
+
 void cpu_bind(int cpu);
 void cpu_membind(int cpu);
 void node_membind(int node);

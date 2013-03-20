@@ -29,7 +29,7 @@ class TableBuilder
 	PartitionBuilder pbuilder_;
 	static void* build(void *params);
  public:
-	void Build(Table *table, size_t sz);
+	void Build(Table *table, size_t sz, uint32_t nthreads);
 };
 
 #endif // BUILDER_H_

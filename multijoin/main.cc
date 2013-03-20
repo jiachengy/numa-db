@@ -16,17 +16,23 @@ int main(int argc, char *argv[])
 	google::InitGoogleLogging(argv[0]);
 	FLAGS_logtostderr = true;
 
+    if (argc != 2) {
+      cout << "Usage: ./test <nthreads>" << endl;
+      exit(1);
+    }
+      
+    int nthreads = atoi(argv[1]);
 
-    int nthreads = atoi(argv[0]);
-
-	Table *relR = new Table(0, OpPartition, 4, 0, 64);
-	Table *relS = new Table(1, OpPartition, 4, 0, 64);
+	Table *relR = new Table(4, 0);
+	Table *relS = new Table(4, 0);
 	TableBuilder tb;
-	
-	size_t sz = Partition::kPartitionSize * 64 * 16;
-	tb.Build(relR, sz);
-    tb.Build(relS, sz);
 
+
+	size_t sz = Partition::kPartitionSize * 4 * 4;
+	LOG(INFO) << "Building tables.";
+	tb.Build(relR, sz, nthreads);
+    tb.Build(relS, sz, nthreads);
+	LOG(INFO) << "Building done.";
 
     Hashjoin(relR, relS, nthreads);
 
