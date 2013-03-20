@@ -30,6 +30,11 @@ struct thread_t {
 
   node_t *node; // pointer to local node info
   Environment *env; // pointer to global info
+
+  // counters
+  uint32_t local;
+  uint32_t shared;
+  uint32_t remote;
 };
 
 using namespace std;

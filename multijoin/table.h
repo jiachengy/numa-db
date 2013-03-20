@@ -174,6 +174,8 @@ class Table {
   void set_ready() { ready_ = true; }
   bool done() { return done_;}
   void set_done() { done_ = true; }
+  uint32_t done_count() { return done_count_; }
+  uint32_t nparts() { return nparts_; }
 };
 
 

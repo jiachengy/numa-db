@@ -48,6 +48,7 @@ class Tasklist
 
 	Task* Fetch();
 
+    bool Empty() { return tasks_.empty(); }
 
 	OpType type() { return in_->type(); }
 	int id() { return id_; }

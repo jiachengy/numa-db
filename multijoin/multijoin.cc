@@ -1,9 +1,12 @@
+#include <iostream>
 #include <pthread.h>
 #include <numa.h>
 
 #include "types.h"
 #include "taskqueue.h"
 #include "util.h"
+
+using namespace std;
 
 void* work_thread(void *param)
 {
@@ -12,10 +15,10 @@ void* work_thread(void *param)
   cpu_bind(cpu);
 
   Taskqueue *queue = my->node->queue;
-  Task *task = NULL;
 
+  // TODO: change busy waiting to signal
   while (1) {
-    task = NULL; // reset task
+    Task *task = NULL;
 
     // check termination
     if (my->env->done())
@@ -27,16 +30,17 @@ void* work_thread(void *param)
         delete my->localtasks;
         my->localtasks = NULL;
       }
+      if (task)
+        my->local++;
     }
-    LOG(INFO) << "Local not found.";
 
     if (!task) {
       task = queue->Fetch();
       // if current queue is build or probe
       // we will expand the tasks to our local queue
+      if (task)
+        my->shared++;
     }
-
-    LOG(INFO) << "Node queue not found.";
 
 
     if (!task) {
@@ -50,6 +54,9 @@ void* work_thread(void *param)
         task = my->stolentasks->Fetch();
         if (task == NULL)
           my->stolentasks = NULL;
+        else {
+          my->remote++;
+        }
       }
     }
 
@@ -67,7 +74,7 @@ void* work_thread(void *param)
       }
       
       if (my->stolentasks) {
-        LOG(INFO) << "Haha. We have stolen a local probing work.";
+        LOG(INFO) << "Haha. We have stolen a local probing list.";
       }
       else {
         // there is no local probing we can steal
@@ -84,12 +91,14 @@ void* work_thread(void *param)
           }
         }
         if (my->stolentasks) {
-          LOG(INFO) << "Heyhey, we have stolen a remote partition work.";
+          LOG(INFO) << "Heyhey, we have stolen a remote partition list.";
         }
       }
       
       if (my->stolentasks) {
         task = my->stolentasks->Fetch();
+        if (task)
+          my->remote++;
       }
     }
     
@@ -98,9 +107,6 @@ void* work_thread(void *param)
       task->Run(my);
       delete task;
     }
-    // otherwise there is no work now, we can sleep
-    //    else
-    //      sleep(1); // sleep for 1 second
   }
 
 
@@ -127,8 +133,14 @@ void Hashjoin(Table *relR, Table *relS, int nthreads)
   }
 
   // join threads
+  thread_t *infos = env->threads();
   for (int i = 0; i < nthreads; i++) {
     pthread_join(threads[i], NULL);
+
+    cout << "Thread[" << i << "]:"
+         << infos[i].local << ","
+         << infos[i].shared << ","
+         << infos[i].remote << endl;
   }
 
   LOG(INFO) << "All threads join.";

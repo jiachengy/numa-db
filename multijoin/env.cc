@@ -37,6 +37,9 @@ Environment::Environment(int nthreads)
     t->stolentasks = NULL;
     t->env = this;
 
+    t->local = 0;
+    t->shared = 0;
+    t->remote = 0;
     nodes_[node].groups[node_idx[node]++] = t;
   }
 }

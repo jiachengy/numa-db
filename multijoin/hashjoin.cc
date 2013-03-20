@@ -19,16 +19,12 @@ void PartitionTask::ProcessBlock(thread_t *args, block_t block, uint32_t mask, u
   // histogram
   memset(hist, 0, fanout * sizeof(uint32_t)); // clear histogram
 
-  LOG(INFO) << "Start histogram...";
-
   tuple_t *tuple = block.tuples;
   for (uint32_t i = 0; i < block.size; i++) {
     uint32_t idx = HASH_BIT_MODULO((tuple++)->key, mask, offset_);
     hist[idx]++;
   }
 
-  LOG(INFO) << "Checking output buffer...";
-	
   // check output buffer
   for (uint32_t idx = 0; idx < fanout; idx++) {
     int buffer_id = args->tid * fanout + idx;
@@ -48,13 +44,11 @@ void PartitionTask::ProcessBlock(thread_t *args, block_t block, uint32_t mask, u
       out_->SetBuffer(buffer_id, np);
       outp = np;
 
-      LOG(INFO) << "Create a new buffer.";
     }
     dst[idx] = &outp->tuples()[outp->size()];
     outp->set_size(outp->size() + hist[idx]); // set size at once
   }
 
-  LOG(INFO) << "Start scattering...";
   // second scan, partition and scatter
   tuple = block.tuples;
   for (uint32_t i = 0; i < block.size; i++) {
@@ -67,10 +61,15 @@ void PartitionTask::Finish(thread_t* args)
 {
   in_->Commit();
 
+  LOG(INFO) << "Table size: " << in_->done_count() << ":" << in_->nparts();
+
+
+
   // check if I am the last one to finish?
   if (!in_->done())
     return;
 
+  LOG(INFO) << "I am the last.";
   LOG(INFO) << "Put buffers.";
 
   // Finish all remaining buffered partitions

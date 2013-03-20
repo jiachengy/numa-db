@@ -67,6 +67,8 @@ void TableBuilder::Build(Table *table, size_t size, uint32_t nthreads)
 
 	for (uint32_t i = 0; i < nthreads; i++)
 		free(args[i].partitions);
+    
+    table->set_ready();
 }
 
 
