@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
 	TableBuilder tb;
 
 
-	size_t sz = Partition::kPartitionSize * 4 * 4;
+	size_t sz = Partition::kPartitionSize * 32;
 	LOG(INFO) << "Building tables.";
 	tb.Build(relR, sz, nthreads);
     tb.Build(relS, sz, nthreads);

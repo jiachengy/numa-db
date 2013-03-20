@@ -20,17 +20,30 @@ struct block_t {
 block_t(tuple_t *ts, size_t sz) : tuples(ts), size(sz) {}
 };
 
+struct hashtable_t {
+  int *next;
+  int *bucket;
+  uint32_t nbuckets;
+  uint32_t ntuples;
+};
+
+inline void hashtable_free(hashtable_t *ht)
+{
+  free(ht->next);
+  free(ht->bucket);
+  free(ht);
+}
 
 class Partition {
  private:
   int node_; // numa location
   int key_; // partition key
 
+  hashtable_t *hashtable_;
+
   tuple_t *tuples_; // actual data
   size_t size_;
   uint32_t curpos_;
-
-  //	HashTable *hashtable_; 	// normal partition and hash table share the same structure
 
   bool done_; // indidate the partition has been processed
   bool ready_; // indicate that the partiiton is ready to be processed
@@ -49,15 +62,24 @@ class Partition {
     curpos_ = 0;
     done_ = false;
     ready_ =false;
-    tuples_ = (tuple_t*)alloc(sizeof(tuple_t) * kPartitionSize);
-    memset(tuples_, 0, sizeof(tuple_t) * kPartitionSize);
+    tuples_ = NULL;
+    hashtable_ = NULL;
   }
 
   ~Partition() {
     if (tuples_)
       dealloc(tuples_, sizeof(tuple_t) * kPartitionSize);
+    if (hashtable_)
+      hashtable_free(hashtable_);
   }
 
+
+  void Alloc() {
+    if (!tuples_) {
+      tuples_ = (tuple_t*)alloc(sizeof(tuple_t) * kPartitionSize);
+      memset(tuples_, 0, sizeof(tuple_t) * kPartitionSize);
+    }
+  }
 
   block_t NextBlock() {
     size_t sz = kBlockSize;
@@ -84,9 +106,11 @@ class Partition {
 
   // for efficiency purpose, we expose the 
   // raw data and allow us to set the size at once
-  tuple_t *tuples() { return tuples_; }
+  tuple_t* tuples() { return tuples_; }
   void set_size(size_t sz) { size_ = sz; }
   size_t size() { return size_; }
+  hashtable_t* hashtable() { return hashtable_; }
+  void set_hashtable(hashtable_t *ht) { hashtable_ = ht; }
 
   int node() { return node_; }
   int key() { return key_;}

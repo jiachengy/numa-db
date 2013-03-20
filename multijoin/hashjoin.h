@@ -30,35 +30,37 @@ class PartitionTask : public Task
     this->offset_ = offset;
     this->nbits_ = nbits;
   }
-
-  virtual ~PartitionTask() {
-    delete part_;
-  }
+  
+  virtual ~PartitionTask() {}
 
   virtual void Run(thread_t *args);
 };
 
 
-/*
-  class BuildTask : public Task
-  {
-  private:
-  Partition part_;
 
-  // output
+class BuildTask : public Task
+{
+ private:
   Table *in_;
   Table *out_;
+  int key_;
 
-  public:
-  virtual void Run(thread_t *args) {
-  // Get the hash table from out
-  // If hash table does not exists, build a new one
+  void Finish(thread_t *my, hashtable_t *ht);
 
-  // Insert new element into the hash table
+ public:
+ BuildTask(OpType type, Table *in, Table *out, int key) : Task(type) {
+    in_ = in;
+    out_ = out;
+    key_ = key;
   }
+  virtual ~BuildTask() {}
 
-  };
+  virtual void Run(thread_t *my);
 
+};
+
+
+/*
   class ProbeTask : public Task
   {
   private:
