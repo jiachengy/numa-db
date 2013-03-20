@@ -11,7 +11,9 @@ void node_membind(int node);
 int get_running_cpu();
 int get_running_node();
 
+int cpu_of_thread_rr(int tid);
 int node_of_cpu(int cpu);
+
 void* alloc_interleaved(size_t sz);
 void* alloc(size_t sz);
 void dealloc(void *p, size_t sz);

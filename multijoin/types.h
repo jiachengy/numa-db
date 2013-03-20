@@ -13,10 +13,6 @@ struct tuple_t {
     value_t  payload;
 };
 
-struct block_t {
-	int offset;
-	size_t size;
-};
 
 
 enum OpType {

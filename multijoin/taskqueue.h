@@ -16,8 +16,13 @@ using namespace std;
 
 class Task
 {
+ protected:
+  OpType type_;
  public:
+ Task(OpType type) : type_(type) {}
 	virtual void Run(thread_t *args) = 0;
+    
+    OpType type() { return type_; }
 };
 
 
@@ -37,16 +42,14 @@ class Tasklist
 		priority_ = priority;
 	}
 
-	bool Empty() {
-		return tasks_.empty();
-	}
-
 	void AddTask(Task *task) {
 		tasks_.push_back(task);
 	}
 
 	Task* Fetch();
-	
+
+
+	OpType type() { return in_->type(); }
 	int id() { return id_; }
 	int priority() { return priority_; }
 	Table* in() { return in_; }
@@ -56,25 +59,24 @@ class Tasklist
 class Taskqueue
 {
  private:
-	Tasklist *current_;
 	list<Tasklist*> actives_;
 	vector<Tasklist*> queues_;
 
-	// remove empty task list from actives
-	void RetireList() {
-		actives_.pop_front();
-	}
-
  public:
-    Taskqueue() : current_(NULL) { }
+    Taskqueue() { }
 
 	~Taskqueue() {
 		for (uint32_t i = 0; i < queues_.size(); i++)
 			delete queues_[i];
 	}
 
-	bool Empty() {
-		return current_ == NULL;
+	Tasklist* GetListByType(OpType type) {
+		for (list<Tasklist*>::iterator it = actives_.begin();
+			 it != actives_.end(); it++) {
+			if ((*it)->type() == type)
+				return *it;
+		}
+		return NULL;
 	}
 
 	void AddList(Tasklist *list) {
@@ -96,7 +98,6 @@ class Taskqueue
 
 	void Promote(int taskid) {
 		actives_.push_front(queues_[taskid]);
-		current_ = actives_.front();
 	}
 
 };

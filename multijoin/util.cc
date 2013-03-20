@@ -11,6 +11,24 @@
 
 #include "util.h"
 
+#define INGATAN
+#ifdef INGATAN
+int cores[4][16] = {
+	{0,1,2,3,4,5,6,7,32,33,34,35,36,37,38,39},
+    {8,9,10,11,12,13,14,15,40,41,42,43,44,45,46,47},
+	{16,17,18,19,20,21,22,23,48,49,50,51,52,53,54,55},
+	{24,25,26,27,28,29,30,31,56,57,58,59,60,61,62,63},
+};
+#endif
+
+int cpu_of_thread_rr(int tid)
+{
+	int node = tid % numa_max_node();
+	int index = tid / 4;
+	return cores[node][index];
+}
+
+
 uint32_t cpus(void)
 {
 	char cpu_name[40];
