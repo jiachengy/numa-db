@@ -1,9 +1,63 @@
 #include "table.h"
+#include "hashtable.h"
 
 int Table::__autoid__ = 0;
 
-Table::Table(uint32_t nnodes, uint32_t nkeys) {
-	id_ = __autoid__++;
+Partition::~Partition() {
+  if (tuples_) {
+    Dealloc();
+    tuples_ = NULL;
+  }
+
+  if (hashtable_) {
+    hashtable_free(hashtable_);
+    hashtable_ = NULL;
+  }
+}
+
+void Partition::Alloc()
+{
+  if (!tuples_) {
+    assert(get_running_node() == node_);
+    tuples_ = (tuple_t*)alloc(sizeof(tuple_t) * kPartitionSize);
+    memset(tuples_, 0, sizeof(tuple_t) * kPartitionSize);
+  }
+}
+
+void Partition::Dealloc()
+{
+  if (tuples_) {
+    dealloc(tuples_, sizeof(tuple_t) * kPartitionSize);
+  }
+}
+
+block_t Partition::NextBlock() {
+  size_t sz = kBlockSize;
+  uint32_t pos = curpos_;
+  if (curpos_ + sz >= size_) {
+    sz = size_ - curpos_;
+    curpos_ = -1;
+    set_done();
+  }
+  else
+    curpos_ += kBlockSize;
+  return block_t(tuples_ + pos, sz);
+}
+
+void Partition::Reset() { 	// used by the recycler
+  // node cannot be changed
+  key_ = -1;
+  done_ = false;
+  ready_ =false;
+  size_ = 0;
+  curpos_ = 0;
+  hashtable_ = NULL;
+}
+
+
+Table::Table(uint32_t nnodes, uint32_t nkeys)
+  : id_(__autoid__++)
+{
 	type_ = OpNone;
 
 	nkeys_ = nkeys;
@@ -12,18 +66,12 @@ Table::Table(uint32_t nnodes, uint32_t nkeys) {
 
 	nnodes_ = nnodes;
 	pnodes_.resize(nnodes);
-
-    nparts_ = 0;
-	nbuffers_ = 0;
-	done_count_ = 0;
-	done_ = false;
-	ready_ = false;
-	buffers_ = NULL;
 }
 
 
-Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers) {
-	id_ = __autoid__++;
+Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers)
+  : id_(__autoid__++)
+{
 	type_ = type;
 
 	nkeys_ = nkeys;
@@ -33,15 +81,10 @@ Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers) {
 	nnodes_ = nnodes;
 	pnodes_.resize(nnodes);
 
-    nparts_ = 0;
 	nbuffers_ = nbuffers;
-	done_count_ = 0;
-	done_ = false;
-	ready_ = false;
 	buffers_ = (Partition**)malloc(sizeof(Partition*) * nbuffers);
 	memset(buffers_, 0, sizeof(Partition*) * nbuffers);
 }
-
 
 Table::~Table() {
 	if (buffers_)
@@ -55,3 +98,26 @@ Table::~Table() {
 	}
 }
 
+void Table::AddPartition(Partition *p)
+{
+  pthread_mutex_lock(&mutex_);
+
+  p->set_ready(); // p is read only now
+  pnodes_[p->node()].push_back(p);
+  if (nkeys_)
+    pkeys_[p->key()].push_back(p);
+  nparts_++;
+
+  pthread_mutex_unlock(&mutex_);
+}
+
+void Table::Commit(int size)
+{
+  pthread_mutex_lock(&mutex_);
+
+  done_count_ += size;
+  if (done_count_ == nparts_)
+    set_done();
+
+  pthread_mutex_unlock(&mutex_);
+}

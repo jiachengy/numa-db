@@ -5,12 +5,10 @@
 using namespace std;
 
 Environment::Environment(int nthreads)
+  : nthreads_(nthreads), nnodes_(num_numa_nodes())
 {
-  nthreads_ = nthreads;
-  nnodes_ = num_numa_nodes();
   nodes_ = (node_t*)malloc(sizeof(node_t) * nnodes_);
   threads_ = (thread_t*)malloc(sizeof(thread_t) * nthreads);
-  done_ = false;
 
   for (int node = 0; node < nnodes_; node++) {
     node_t *n = &nodes_[node];
@@ -27,7 +25,6 @@ Environment::Environment(int nthreads)
     thread_t *t = &threads_[tid];
     int cpu = cpu_of_thread_rr(tid); // round robin
     int node = node_of_cpu(cpu);
-    LOG(INFO) << "Thread " << tid << " is assigned to cpu[" << cpu <<"] and node[" << node << "]";
 
     t->tid = tid;
     t->cpu = cpu;
@@ -59,25 +56,15 @@ Environment::~Environment()
   free(threads_);
   free(nodes_);
 
-  LOG(INFO) << "structure deallocate done.";
-
   // deallocate tables
   for (vector<Table*>::iterator it = tables_.begin();
-       it != tables_.end(); it++) {
-    LOG(INFO) << "table id: " << (*it)->id();
+       it != tables_.end(); it++)
     delete *it;
-  }
-
-  LOG(INFO) << "tables deallocate done.";
-
 
   // deallocate tasks
   for (vector<Tasklist*>::iterator it = tasks_.begin();
-       it != tasks_.end(); it++) {
+       it != tasks_.end(); it++)
     delete *it;
-  }
-
-  LOG(INFO) << "tasks deallocate done.";
 }
 
 // Test Partition Task
@@ -93,25 +80,29 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
                              Params::kFanoutPass1,
                              nthreads_ * Params::kFanoutPass1);
 
-  Table *rhash = new Table(OpProbe, nnodes_, Params::kFanoutPass1, 0);
+  Table *rbuild = new Table(OpProbe, nnodes_, Params::kFanoutPass1, 0);
 
   Table *result = new Table(OpNone, nnodes_, 
                             Params::kFanoutPass1,
                             nthreads_ * Params::kFanoutPass1);
 
-  // For Catelog
+  // Initialize probe lists
+  for (int key = 0; key < Params::kFanoutPass1; key++)
+    probes_.push_back(new Tasklist(sparted, result, ShareLocal));
+
+  build_ = rbuild;
+
+  // Table Catelog
   AddTable(rt);
   AddTable(st);
   AddTable(rparted);
   AddTable(sparted);
-  AddTable(rhash);
+  AddTable(rbuild);
   AddTable(result);
 
-  // the hash tasks are shared by all threads, and we can init the tasks in advance
-  // how do we deallocate this list????
-  Tasklist *buildR = new Tasklist(rparted, rhash, ShareGlobal);
+  Tasklist *buildR = new Tasklist(rparted, rbuild, ShareGlobal);
   for (int key = 0; key < Params::kFanoutPass1; key++) {
-    Task *task = new BuildTask(OpBuild, rparted, rhash, sparted, result, key);
+    Task *task = new BuildTask(OpBuild, rparted, rbuild, sparted, result, key);
     buildR->AddTask(task);
   }
   tasks_.push_back(buildR);
@@ -147,9 +138,6 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
 
     tq->Unblock(partR->id());
     tq->Unblock(partS->id());
-    //    tq->Unblock(probeS->id()); // although probing is unblocked, but it is always empty until the first hash table is built
-
-    LOG(INFO) << "Active size:" << tq->active_size();
   }
 
 }

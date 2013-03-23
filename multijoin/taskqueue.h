@@ -2,8 +2,9 @@
 #define TASKQUEUE_H_
 
 #include <cassert>
-#include <list>
+#include <queue>
 #include <vector>
+#include <pthread.h>
 
 class Task;
 class Tasklist;
@@ -23,11 +24,12 @@ enum ShareLevel {
 class Task
 {
  protected:
-  OpType type_;
+  const OpType type_;
  public:
- Task(OpType type) : type_(type) {}
-  virtual void Run(thread_t *args) = 0;
-    
+  Task(OpType type) : type_(type) {}
+  virtual ~Task() {}
+
+  virtual void Run(thread_t *args) = 0;    
   OpType type() { return type_; }
 };
 
@@ -35,31 +37,45 @@ class Task
 class Tasklist
 {
  private:
-  list<Task*> tasks_;
+  queue<Task*> tasks_;
   Table *in_;
   Table *out_;
-  ShareLevel share_;
+  ShareLevel share_level_;
+  pthread_mutex_t mutex_ = PTHREAD_MUTEX_INITIALIZER;
+  
  public:
-  Tasklist(Table *in, Table *out, ShareLevel share) {
+  Tasklist(Table *in, Table *out, ShareLevel level) {
     in_ = in;
     out_ = out;
-    share_ = share;
+    share_level_ = level;
+  }
+
+  ~Tasklist() {
+    pthread_mutex_destroy(&mutex_);
+  }
+
+  void AddTaskAtomic(Task *task) {
+    pthread_mutex_lock(&mutex_);
+    tasks_.push(task);
+    pthread_mutex_unlock(&mutex_);
   }
 
   void AddTask(Task *task) {
-    tasks_.push_back(task);
+    tasks_.push(task);
   }
 
   Task* Fetch();
+  Task* FetchAtomic();
 
-  bool Empty() { return tasks_.empty(); }
+  bool empty() { return tasks_.empty(); }
 
   size_t size() { return tasks_.size(); }
   OpType type() { return in_->type(); }
   int id() { return in_->id(); }
   Table* in() { return in_; }
   Table* out() { return out_; }
-  ShareLevel share() { return share_; }
+  ShareLevel share_level() { return share_level_; }
+  void set_share_level(ShareLevel level) { share_level_ = level; }
 };
 
 class Taskqueue
@@ -67,54 +83,54 @@ class Taskqueue
  private:
   list<Tasklist*> actives_;
   vector<Tasklist*> queues_;
+  pthread_mutex_t mutex_ = PTHREAD_MUTEX_INITIALIZER;
 
  public:
-  Taskqueue() { }
-
+  Taskqueue() {}
   ~Taskqueue() {
+    pthread_mutex_destroy(&mutex_);
   }
-
-  int active_size() { return actives_.size(); }
 
   Tasklist* GetListByType(OpType type) {
     for (list<Tasklist*>::iterator it = actives_.begin();
          it != actives_.end(); it++) {
-      if ((*it)->type() == type && !(*it)->Empty())
+      if ((*it)->type() == type && !(*it)->empty())
         return *it;
     }
     return NULL;
   }
 
   void AddList(Tasklist *list) {
+    pthread_mutex_lock(&mutex_);
     uint32_t taskid = list->id();
     if (taskid >= queues_.size()) {
       queues_.resize(taskid + 1);
     }
-
-    LOG(INFO) << "taskid: " << taskid << " queue size: " << queues_.size();
     queues_[taskid] = list;
+    pthread_mutex_unlock(&mutex_);
   }
 
   void AddTask(int taskid, Task *task) {
+    pthread_mutex_lock(&mutex_);
     queues_[taskid]->AddTask(task);
+    pthread_mutex_unlock(&mutex_);
   }
 
   Task* Fetch();
 
-  // Unblock
-  // insert the tasklist into appropriate place
-  // according to its priority
   void Unblock(int taskid) {
-    LOG(INFO) << "Tasklist " << taskid;
+    pthread_mutex_lock(&mutex_);
     actives_.push_back(queues_[taskid]);
-    LOG(INFO) << "Tasklist " << taskid 
-              << "is unblocked, its size: " << queues_[taskid]->size();
+    pthread_mutex_unlock(&mutex_);
   }
 
   void Promote(int taskid) {
+    pthread_mutex_lock(&mutex_);
     actives_.push_front(queues_[taskid]);
+    pthread_mutex_unlock(&mutex_);
   }
 
+  int active_size() { return actives_.size(); }
 };
 
 #endif // TASKQUEUE_H_

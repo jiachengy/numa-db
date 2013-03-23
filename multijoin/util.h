@@ -4,12 +4,22 @@
 #include <stdint.h>
 #include <numa.h>
 
-uint32_t cpus();
+#ifndef NEXT_POW_2
+#define NEXT_POW_2(V)                           \
+    do {                                        \
+        V--;                                    \
+        V |= V >> 1;                            \
+        V |= V >> 2;                            \
+        V |= V >> 4;                            \
+        V |= V >> 8;                            \
+        V |= V >> 16;                           \
+        V++;                                    \
+    } while(0)
+#endif
 
-inline int num_numa_nodes()
-{
-  return numa_max_node() + 1;
-}
+
+uint32_t cpus();
+uint32_t num_numa_nodes();
 
 
 void cpu_bind(int cpu);

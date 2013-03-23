@@ -99,7 +99,6 @@ void* work_thread(void *param)
     }
     
     if (task) {
-      LOG(INFO) << "Grab a new task " << task->type();
       task->Run(my);
       delete task;
     }
@@ -142,5 +141,4 @@ void Hashjoin(Table *relR, Table *relS, int nthreads)
   LOG(INFO) << "All threads join.";
 
   delete env;
-  LOG(INFO) << "Delete env done.";
 }

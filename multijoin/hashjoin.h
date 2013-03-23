@@ -1,9 +1,10 @@
 #ifndef HASHJOIN_H_
 #define HASHJOIN_H_
 
-#include "types.h"
+#include "table.h" // Partition, Table
+#include "types.h" // tuple_t, OpType
 #include "taskqueue.h" // Task
-#include "env.h"
+#include "env.h" // thread_t
 
 class PartitionTask : public Task
 {
@@ -31,8 +32,6 @@ class PartitionTask : public Task
     this->nbits_ = nbits;
   }
   
-  virtual ~PartitionTask() {}
-
   virtual void Run(thread_t *my);
 };
 
@@ -60,7 +59,6 @@ class BuildTask : public Task
     probe_ = probe;
     probe_out_ = probe_out;
   }
-  virtual ~BuildTask() {}
 
   virtual void Run(thread_t *my);
 
@@ -69,18 +67,11 @@ class BuildTask : public Task
 class ProbeTask : public Task
 {
  private:
-  Table *in_;
-  Table *out_;
-
   int key_;
-  Table *build_;
  public:
- ProbeTask(OpType type, Table *in, Table *out, Table *build, int key)
+ ProbeTask(OpType type, int key)
     : Task(type) {
-    in_ = in;
-    out_ = out;
     key_ = key;
-    build_ = build;
   }
   
   virtual void Run(thread_t *my);

@@ -43,12 +43,12 @@ class Environment
 {
  private:
   // general info
-  int nthreads_;
-  int nnodes_;
+  const int nthreads_;
+  const int nnodes_;
 
   // node and thread info
-  node_t *nodes_; // all nodes structure
-  thread_t *threads_;
+  node_t *nodes_ = NULL; // all nodes structure
+  thread_t *threads_ = NULL;
 
   // table info
   vector<Table*> tables_;	
@@ -56,10 +56,16 @@ class Environment
   // all task lists
   vector<Tasklist*> tasks_;
 
-  // indicate the query is finished.
-  bool done_;
- public:
+  // probe lists
+  vector<Tasklist*> probes_;
 
+  // build table
+  Table *build_ = NULL;
+
+  // indicate the query is finished.
+  bool done_ = false;
+
+ public:
   Environment(int nthreads);
   ~Environment();
 
@@ -69,7 +75,8 @@ class Environment
   int nnodes() { return nnodes_; }
   bool done() { return done_; }
   void set_done() { done_ = true; }
-
+  vector<Tasklist*>& probes() { return probes_; }
+  Table* build_table() { return build_; }
   int num_tables() { return tables_.size(); }
 
   Table* GetTable(int table_id) {

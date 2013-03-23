@@ -42,6 +42,12 @@ uint32_t cpus(void)
   return cpu_num;
 }
 
+uint32_t num_numa_nodes()
+{
+  return numa_max_node() + 1;
+}
+
+
 void cpu_membind(int cpu_id)
 {
   char numa_id_str[12];
