@@ -29,7 +29,7 @@ void* work_thread(void *param)
 
       task = my->localtasks->Fetch();
       if (task == NULL) { // local tasks are exhausted
-        delete my->localtasks;
+        //        delete my->localtasks; // hey. maybe we should not delete it, otherwise the stolen worker will have trouble
         my->localtasks = NULL;
       }
       if (task)
@@ -46,12 +46,6 @@ void* work_thread(void *param)
 
 
     if (!task) {
-      // we have to steal
-      // currently, we only steal local probe and remote partition
-      // If build cannot be stolen, there is a potential
-      // problem of unbalanced load
-
-      // do we have buffered stolen work?
       if (my->stolentasks) {
         task = my->stolentasks->Fetch();
         if (task == NULL)
@@ -64,16 +58,16 @@ void* work_thread(void *param)
 
     if (!task) {
       // is there local probe work we can steal?
-      // thread_t **groups = my->node->groups;
-      // for (int i = 0; i < my->node->nthreads; i++) {
-      //   thread_t *t = groups[i];
-      //   if (t->tid == my->tid) // skip myself
-      //     continue;
-      //   if (t->localtasks && t->localtasks->type()==OpUnitProbe) { // it has local probing task
-      //     my->stolentasks = t->localtasks; // steal it!
-      //     break;
-      //   }
-      // }
+      thread_t **groups = my->node->groups;
+      for (int i = 0; i < my->node->nthreads; i++) {
+        thread_t *t = groups[i];
+        if (t->tid == my->tid) // skip myself
+          continue;
+        if (t->localtasks && t->localtasks->type()==OpProbe) { // it has local probing task
+          my->stolentasks = t->localtasks; // steal it!
+          break;
+        }
+      }
       
       if (my->stolentasks) {
         LOG(INFO) << "Haha. We have stolen a local probing list.";
