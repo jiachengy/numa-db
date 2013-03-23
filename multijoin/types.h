@@ -20,6 +20,7 @@ enum OpType {
 	OpPartition,
 	OpBuild,
 	OpProbe,
+    OpUnitProbe,
 };
 
 #endif // TYPES_H_

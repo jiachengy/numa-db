@@ -53,6 +53,9 @@ class Environment
   // table info
   vector<Table*> tables_;	
 
+  // all task lists
+  vector<Tasklist*> tasks_;
+
   // indicate the query is finished.
   bool done_;
  public:
@@ -67,6 +70,8 @@ class Environment
   bool done() { return done_; }
   void set_done() { done_ = true; }
 
+  int num_tables() { return tables_.size(); }
+
   Table* GetTable(int table_id) {
     return tables_[table_id];
   }
@@ -74,8 +79,6 @@ class Environment
   void AddTable(Table *table) {
     tables_.push_back(table);
   }
-
-  void TestPartition(Table *rt, Table *st);
 
   void CreateJoinTasks(Table *rt, Table *st);
 };

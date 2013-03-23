@@ -20,19 +20,17 @@ struct block_t {
 block_t(tuple_t *ts, size_t sz) : tuples(ts), size(sz) {}
 };
 
+struct entry_t {
+  tuple_t tuple;
+  int next;
+};
+
 struct hashtable_t {
-  int *next;
+  entry_t *next;
   int *bucket;
   uint32_t nbuckets;
   uint32_t ntuples;
 };
-
-inline void hashtable_free(hashtable_t *ht)
-{
-  free(ht->next);
-  free(ht->bucket);
-  free(ht);
-}
 
 class Partition {
  private:
@@ -67,12 +65,18 @@ class Partition {
   }
 
   ~Partition() {
-    if (tuples_)
+    if (tuples_) {
       dealloc(tuples_, sizeof(tuple_t) * kPartitionSize);
-    if (hashtable_)
-      hashtable_free(hashtable_);
-  }
+      tuples_ = NULL;
+    }
 
+    if (hashtable_) {
+      dealloc(hashtable_->next, sizeof(entry_t) * hashtable_->ntuples);
+      dealloc(hashtable_->bucket, sizeof(int) * hashtable_->nbuckets);
+      free(hashtable_);
+      hashtable_ = NULL;
+    }
+  }
 
   void Alloc() {
     if (!tuples_) {
@@ -94,7 +98,6 @@ class Partition {
     return block_t(tuples_ + pos, sz);
   }
 
-
   void Reset() { 	// used by the recycler
     // node will not be changed
     key_ = -1;
@@ -102,7 +105,13 @@ class Partition {
     ready_ =false;
     size_ = 0;
     curpos_ = 0;
+    hashtable_ = NULL;
   }
+
+  void Append(tuple_t tuple) {
+    tuples_[size_++] = tuple;
+  }
+
 
   // for efficiency purpose, we expose the 
   // raw data and allow us to set the size at once
@@ -124,6 +133,7 @@ class Partition {
 
 class Table {
  private:
+  static int __autoid__;
   static const int kInvalidId = -1;
 
   int id_;
@@ -149,13 +159,11 @@ class Table {
   // constructor for creating base table
   Table(uint32_t nnodes, uint32_t nkeys);
   // construtor for intermediate tables
-  Table(int id, OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers);
+  Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers);
   ~Table();
 
   void AddPartition(Partition *p) {
-    LOG(INFO) << "Partition: "<< p->node() << "," << p->key() << "," << p->size();
-    LOG(INFO) << "Table: "<< pnodes_.size() << "," << pkeys_.size();
-
+    p->set_ready(); // p is read only now
 
     nparts_++;
     pnodes_[p->node()].push_back(p);
@@ -175,8 +183,10 @@ class Table {
   }
 
   // commit when a partition has finished processing
-  void Commit() {
-    done_count_++;
+  // by default commit 1
+  // but we can commit more than 1 at a time
+  void Commit(int size = 1) {
+    done_count_ += size;
     if (done_count_ == nparts_)
       set_done();
   }
@@ -193,7 +203,7 @@ class Table {
   OpType type() { return type_; }
   void set_type(OpType type) { type_ = type;}
   int id() { return id_;}
-  void set_id(int id) { id_ = id;}
+  //  void set_id(int id) { id_ = id;}
   bool ready() { return ready_; }
   void set_ready() { ready_ = true; }
   bool done() { return done_;}

@@ -36,6 +36,11 @@ int main(int argc, char *argv[])
 
     Hashjoin(relR, relS, nthreads);
 
-	delete relR;
-    delete relS;
+	LOG(INFO) << "Hash join done.";
+
+    //	delete relR;
+    //    delete relS;
+
+	LOG(INFO) << "Delete table done";
+
 }

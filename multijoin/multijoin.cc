@@ -25,6 +25,8 @@ void* work_thread(void *param)
       break;
 
     if (my->localtasks) {
+      LOG(INFO) << "Thread " << my->tid << " fetching from localtasks " << my->localtasks->size();
+
       task = my->localtasks->Fetch();
       if (task == NULL) { // local tasks are exhausted
         delete my->localtasks;
@@ -62,16 +64,16 @@ void* work_thread(void *param)
 
     if (!task) {
       // is there local probe work we can steal?
-      thread_t **groups = my->node->groups;
-      for (int i = 0; i < my->node->nthreads; i++) {
-        thread_t *t = groups[i];
-        if (t->tid == my->tid) // skip myself
-          continue;
-        if (t->localtasks && t->localtasks->type()==OpProbe) { // it has local probing task
-          my->stolentasks = t->localtasks; // steal it!
-          break;
-        }
-      }
+      // thread_t **groups = my->node->groups;
+      // for (int i = 0; i < my->node->nthreads; i++) {
+      //   thread_t *t = groups[i];
+      //   if (t->tid == my->tid) // skip myself
+      //     continue;
+      //   if (t->localtasks && t->localtasks->type()==OpUnitProbe) { // it has local probing task
+      //     my->stolentasks = t->localtasks; // steal it!
+      //     break;
+      //   }
+      // }
       
       if (my->stolentasks) {
         LOG(INFO) << "Haha. We have stolen a local probing list.";
@@ -103,7 +105,7 @@ void* work_thread(void *param)
     }
     
     if (task) {
-      LOG(INFO) << "Grab a new task.";
+      LOG(INFO) << "Grab a new task " << task->type();
       task->Run(my);
       delete task;
     }
@@ -122,7 +124,7 @@ void Hashjoin(Table *relR, Table *relS, int nthreads)
   LOG(INFO) << "Environment set up.";
 
   // init the task queues
-  env->TestPartition(relR, relS);
+  env->CreateJoinTasks(relR, relS);
 
   LOG(INFO) << "Task initialized.";
 
@@ -146,4 +148,5 @@ void Hashjoin(Table *relR, Table *relS, int nthreads)
   LOG(INFO) << "All threads join.";
 
   delete env;
+  LOG(INFO) << "Delete env done.";
 }

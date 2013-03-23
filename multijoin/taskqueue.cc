@@ -10,9 +10,10 @@ Task* Tasklist::Fetch() {
 
 Task* Taskqueue::Fetch() {
   list<Tasklist*>::iterator it = actives_.begin();
+
   while (it != actives_.end()) {
     if ((*it)->Empty()
-        && (*it)->in()->ready()) { // we should retire a list, if it is empty and if it read only
+      && (*it)->in()->ready()) { // we should retire a list, if it is empty and if it read only
       actives_.erase(it++);
     }
     else {
@@ -22,6 +23,7 @@ Task* Taskqueue::Fetch() {
       ++it;
     }
   }
+
   return NULL;
 }
 

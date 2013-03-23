@@ -1,7 +1,9 @@
 #include "table.h"
 
+int Table::__autoid__ = 0;
+
 Table::Table(uint32_t nnodes, uint32_t nkeys) {
-	id_ = kInvalidId;
+	id_ = __autoid__++;
 	type_ = OpNone;
 
 	nkeys_ = nkeys;
@@ -10,7 +12,8 @@ Table::Table(uint32_t nnodes, uint32_t nkeys) {
 
 	nnodes_ = nnodes;
 	pnodes_.resize(nnodes);
-		
+
+    nparts_ = 0;
 	nbuffers_ = 0;
 	done_count_ = 0;
 	done_ = false;
@@ -19,8 +22,8 @@ Table::Table(uint32_t nnodes, uint32_t nkeys) {
 }
 
 
-Table::Table(int id, OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers) {
-	id_ = id;
+Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers) {
+	id_ = __autoid__++;
 	type_ = type;
 
 	nkeys_ = nkeys;
@@ -29,7 +32,8 @@ Table::Table(int id, OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffe
 
 	nnodes_ = nnodes;
 	pnodes_.resize(nnodes);
-		
+
+    nparts_ = 0;
 	nbuffers_ = nbuffers;
 	done_count_ = 0;
 	done_ = false;
@@ -43,7 +47,7 @@ Table::~Table() {
 	if (buffers_)
 		free(buffers_);
 	for (uint32_t node = 0; node < nnodes_; node++) {
-		list<Partition*> pnode = pnodes_[node];
+		list<Partition*> &pnode = pnodes_[node];
 		for (list<Partition*>::iterator it = pnode.begin();
 			 it != pnode.end(); it++) {
 			delete *it;

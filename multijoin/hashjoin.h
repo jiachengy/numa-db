@@ -19,9 +19,9 @@ class PartitionTask : public Task
   int offset_; // cluster bits
   int nbits_; // radix bits per pass
 
-  void ProcessBlock(thread_t *args, block_t block, uint32_t mask, uint32_t fanout, uint32_t hist[], tuple_t *dst[]);
-  void Finish(thread_t *args);
-
+  void ProcessBlock(thread_t *my, block_t block, uint32_t mask, uint32_t fanout, uint32_t hist[], tuple_t *dst[]);
+  void Finish(thread_t *my);
+  
  public:
  PartitionTask(OpType type, Partition *part, Table *in, Table *out, int offset, int nbits) : Task(type) {
     this->in_ = in;
@@ -33,7 +33,7 @@ class PartitionTask : public Task
   
   virtual ~PartitionTask() {}
 
-  virtual void Run(thread_t *args);
+  virtual void Run(thread_t *my);
 };
 
 
@@ -45,13 +45,20 @@ class BuildTask : public Task
   Table *out_;
   int key_;
 
+  // information required to create the probing task
+  Table *probe_;
+  Table *probe_out_;
+
   void Finish(thread_t *my, hashtable_t *ht);
 
  public:
- BuildTask(OpType type, Table *in, Table *out, int key) : Task(type) {
+ BuildTask(OpType type, Table *in, Table *out, Table *probe, Table *probe_out, int key) : Task(type) {
     in_ = in;
     out_ = out;
     key_ = key;
+    
+    probe_ = probe;
+    probe_out_ = probe_out;
   }
   virtual ~BuildTask() {}
 
@@ -59,33 +66,53 @@ class BuildTask : public Task
 
 };
 
+class ProbeTask : public Task
+{
+ private:
+  Table *in_;
+  Table *out_;
 
-/*
-  class ProbeTask : public Task
-  {
-  private:
-  Partition part_;
-  //	HashTable *ht; // the hash table to probe
+  int key_;
+  Table *build_;
+ public:
+ ProbeTask(OpType type, Table *in, Table *out, Table *build, int key)
+    : Task(type) {
+    in_ = in;
+    out_ = out;
+    key_ = key;
+    build_ = build;
+  }
+  
+  virtual void Run(thread_t *my);
+};
+
+
+
+class UnitProbeTask : public Task
+{
+ private:
+  Partition *part_;
 
   Table *in_;
   Table *out_;
 
-  // info for next operator
-  // probe will create the next partition task
+  Table *build_;
 
-  public:
-  virtual void Run(thread_t *args) {
-  //		for (record r in part) {
-  // probe
-			
-  // check if the output buffer is full
-  // if not, add to the buffer
-  // else create a new buffer and schedule
-  //		}
-  // mark current out as ready
+  void ProbeBlock(thread_t *my, block_t block, hashtable_t *ht);
+  void Finish(thread_t* my);
+
+ public:
+  UnitProbeTask(OpType type, Partition *part,
+            Table *in, Table *out, Table *build)
+    : Task(type) {
+    part_ = part;
+    in_ = in;
+    out_ = out;
+    build_ = build;
   }
+  
 
-  };
-*/
+  virtual void Run(thread_t *my);
+};
 
 #endif // HASHJOIN_H_

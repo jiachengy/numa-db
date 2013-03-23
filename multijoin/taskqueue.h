@@ -14,6 +14,12 @@ class Taskqueue;
 
 using namespace std;
 
+enum ShareLevel {
+  ShareLocal,
+  ShareNode,
+  ShareGlobal
+};
+
 class Task
 {
  protected:
@@ -32,14 +38,12 @@ class Tasklist
   list<Task*> tasks_;
   Table *in_;
   Table *out_;
-  int id_;
-  int priority_;
+  ShareLevel share_;
  public:
-  Tasklist(Table *in, Table *out, int id, int priority) {
+  Tasklist(Table *in, Table *out, ShareLevel share) {
     in_ = in;
     out_ = out;
-    id_ = id;
-    priority_ = priority;
+    share_ = share;
   }
 
   void AddTask(Task *task) {
@@ -50,11 +54,12 @@ class Tasklist
 
   bool Empty() { return tasks_.empty(); }
 
+  size_t size() { return tasks_.size(); }
   OpType type() { return in_->type(); }
-  int id() { return id_; }
-  int priority() { return priority_; }
+  int id() { return in_->id(); }
   Table* in() { return in_; }
   Table* out() { return out_; }
+  ShareLevel share() { return share_; }
 };
 
 class Taskqueue
@@ -67,8 +72,6 @@ class Taskqueue
   Taskqueue() { }
 
   ~Taskqueue() {
-    for (uint32_t i = 0; i < queues_.size(); i++)
-      delete queues_[i];
   }
 
   int active_size() { return actives_.size(); }
@@ -83,7 +86,13 @@ class Taskqueue
   }
 
   void AddList(Tasklist *list) {
-    queues_.push_back(list);
+    uint32_t taskid = list->id();
+    if (taskid >= queues_.size()) {
+      queues_.resize(taskid + 1);
+    }
+
+    LOG(INFO) << "taskid: " << taskid << " queue size: " << queues_.size();
+    queues_[taskid] = list;
   }
 
   void AddTask(int taskid, Task *task) {
@@ -96,7 +105,10 @@ class Taskqueue
   // insert the tasklist into appropriate place
   // according to its priority
   void Unblock(int taskid) {
+    LOG(INFO) << "Tasklist " << taskid;
     actives_.push_back(queues_[taskid]);
+    LOG(INFO) << "Tasklist " << taskid 
+              << "is unblocked, its size: " << queues_[taskid]->size();
   }
 
   void Promote(int taskid) {

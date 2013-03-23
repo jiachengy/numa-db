@@ -10,6 +10,8 @@ using namespace std;
 Partition* PartitionBuilder::Build(size_t size)
 {
 	Partition *p = new Partition(get_running_node(), -1);
+    p->Alloc();
+
 	uint32_t seed = time(NULL);	
 
 	tuple_t *tuples = p->tuples();

@@ -58,76 +58,46 @@ Environment::~Environment()
 
   free(threads_);
   free(nodes_);
+
+  LOG(INFO) << "structure deallocate done.";
+
+  // deallocate tables
+  for (vector<Table*>::iterator it = tables_.begin();
+       it != tables_.end(); it++) {
+    LOG(INFO) << "table id: " << (*it)->id();
+    delete *it;
+  }
+
+  LOG(INFO) << "tables deallocate done.";
+
+
+  // deallocate tasks
+  for (vector<Tasklist*>::iterator it = tasks_.begin();
+       it != tasks_.end(); it++) {
+    delete *it;
+  }
+
+  LOG(INFO) << "tasks deallocate done.";
 }
 
 // Test Partition Task
-void Environment::TestPartition(Table *rt, Table *st)
-{
-  rt->set_id(0);
-  //	st->set_id(1);
-  rt->set_type(OpPartition);
-  //	st->set_type(OpPartition);
-
-  Table *rparted = new Table(1, OpBuild, nnodes_,
-                             Params::kFanoutPass1,
-                             nthreads_ * Params::kFanoutPass1);
-  // Table *sparted = new Table(3, OpProbe, nnodes_, 
-  //                            Params::kFanoutPass1,
-  //                            nthreads_ * Params::kFanoutPass1);
-
-  // For Catelog
-  AddTable(rt);
-  //  AddTable(st);
-  AddTable(rparted);
-  //  AddTable(sparted);
-
-  for (int node = 0; node < nnodes_; node++) {
-    Tasklist *partR = new Tasklist(rt, rparted, rt->id(), rt->id());
-    //    Tasklist *partS = new Tasklist(st, sparted, st->id(), st->id());
-		
-    // create partition task from table R and table S
-    list<Partition*>& parts = rt->GetPartitionsByNode(node);
-    for (list<Partition*>::iterator it = parts.begin(); 
-         it != parts.end(); it++) {
-      partR->AddTask(new PartitionTask(OpPartition, *it, rt, rparted, 0, Params::kNumBitsPass1));
-    }
-
-    LOG(INFO) << parts.size() << " partitions are added to tasklist on " << node;
-    // parts = st->GetPartitionsByNode(node);
-    // for (list<Partition*>::iterator it = parts.begin(); 
-    //      it != parts.end(); it++) {
-    //   partS->AddTask(new PartitionTask(OpPartition, *it, 0, Params::kNumBitsPass1, sparted));
-    // }
-
-    Taskqueue *tq = nodes_[node].queue;
-    tq->AddList(partR);
-    //    tq->AddList(partS);
-
-    tq->Unblock(0);
-    //    tq->Unblock(1);
-
-    LOG(INFO) << "Active size:" << tq->active_size();
-  }
-
-}
-
-
-// pass in two built table R and S
 void Environment::CreateJoinTasks(Table *rt, Table *st)
 {
-  rt->set_id(0);
-  st->set_id(1);
   rt->set_type(OpPartition);
   st->set_type(OpPartition);
 
-  Table *rparted = new Table(2, OpBuild, nnodes_,
+  Table *rparted = new Table(OpBuild, nnodes_,
                              Params::kFanoutPass1,
                              nthreads_ * Params::kFanoutPass1);
-  Table *sparted = new Table(3, OpProbe, nnodes_, 
+  Table *sparted = new Table(OpProbe, nnodes_, 
                              Params::kFanoutPass1,
                              nthreads_ * Params::kFanoutPass1);
-  Table *rhash = new Table(4, OpNone, nnodes_, Params::kFanoutPass1, Params::kFanoutPass1);
-  Table *result = new Table(5, OpNone, nnodes_, Params::kFanoutPass1, nthreads_);
+
+  Table *rhash = new Table(OpProbe, nnodes_, Params::kFanoutPass1, 0);
+
+  Table *result = new Table(OpNone, nnodes_, 
+                            Params::kFanoutPass1,
+                            nthreads_ * Params::kFanoutPass1);
 
   // For Catelog
   AddTable(rt);
@@ -137,33 +107,49 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
   AddTable(rhash);
   AddTable(result);
 
+  // the hash tasks are shared by all threads, and we can init the tasks in advance
+  // how do we deallocate this list????
+  Tasklist *buildR = new Tasklist(rparted, rhash, ShareGlobal);
+  for (int key = 0; key < Params::kFanoutPass1; key++) {
+    Task *task = new BuildTask(OpBuild, rparted, rhash, sparted, result, key);
+    buildR->AddTask(task);
+  }
+  tasks_.push_back(buildR);
+
   for (int node = 0; node < nnodes_; node++) {
-    Tasklist *partR = new Tasklist(rt, rparted, rt->id(), rt->id());
-    Tasklist *partS = new Tasklist(st, sparted, st->id(), st->id());
-		
+    Tasklist *partR = new Tasklist(rt, rparted, ShareNode);
+    tasks_.push_back(partR);
+
+    Tasklist *partS = new Tasklist(st, sparted, ShareNode);
+    tasks_.push_back(partS);
+
     // create partition task from table R and table S
     list<Partition*>& parts = rt->GetPartitionsByNode(node);
     for (list<Partition*>::iterator it = parts.begin(); 
          it != parts.end(); it++) {
       partR->AddTask(new PartitionTask(OpPartition, *it, rt, rparted, 0, Params::kNumBitsPass1));
     }
+
     parts = st->GetPartitionsByNode(node);
     for (list<Partition*>::iterator it = parts.begin(); 
          it != parts.end(); it++) {
       partS->AddTask(new PartitionTask(OpPartition, *it, st, sparted, 0, Params::kNumBitsPass1));
     }
 
-    Tasklist *buildR = new Tasklist(rparted, rhash, rparted->id(), rparted->id());
-    Tasklist *probeS = new Tasklist(sparted, result, sparted->id(), sparted->id());
+    Tasklist *probeS = new Tasklist(sparted, result, ShareNode);
+    tasks_.push_back(probeS);
 
     Taskqueue *tq = nodes_[node].queue;
     tq->AddList(partR);
-    tq->AddList(buildR);
     tq->AddList(partS);
+    tq->AddList(buildR);
     tq->AddList(probeS);
 
-    tq->Unblock(0);
-    tq->Unblock(1);
+    tq->Unblock(partR->id());
+    tq->Unblock(partS->id());
+    //    tq->Unblock(probeS->id()); // although probing is unblocked, but it is always empty until the first hash table is built
+
+    LOG(INFO) << "Active size:" << tq->active_size();
   }
 
 }
