@@ -17,8 +17,8 @@ class Table;
 using namespace std;
 
 struct block_t {
-  tuple_t *tuples = NULL;
-  size_t size = 0;
+  tuple_t *tuples;
+  size_t size;
 
   block_t(tuple_t *ts, size_t sz) : tuples(ts), size(sz) {}
 };
@@ -27,21 +27,22 @@ struct block_t {
 class Partition {
  private:
   const int node_; // numa location
-  int key_ = -1; // partition key
+  int key_; // partition key
 
-  bool done_ = false; // indidate the partition has been processed
-  bool ready_ = false; // indicate that the partiiton is ready to be processed
+  bool done_; // indidate the partition has been processed
+  bool ready_; // indicate that the partiiton is ready to be processed
 
-  tuple_t *tuples_ = NULL;
-  size_t size_ = 0;
-  uint32_t curpos_ = 0;
-  hashtable_t *hashtable_ = NULL;
+  tuple_t *tuples_;
+  size_t size_;
+  uint32_t curpos_;
+  hashtable_t *hashtable_;
 
  public:
-  static const size_t kBlockSize = 1024;
-  static const size_t kPartitionSize = 32768;
-
-  Partition(int node, int key) : node_(node), key_(key) {}
+  Partition(int node, int key) 
+    : node_(node), key_(key),
+    done_(false), ready_(false),
+    tuples_(NULL), size_(0), curpos_(0),
+    hashtable_(NULL) {}
   ~Partition();
 
   void Alloc();
@@ -74,26 +75,26 @@ class Table {
   static const int kInvalidId = -1;
 
   const int id_;
-  OpType type_ = OpNone;
+  OpType type_;
 	
   std::vector<std::list<Partition*> > pnodes_;
-  uint32_t nnodes_ = 0;
+  uint32_t nnodes_;
 
   std::vector<std::list<Partition*> > pkeys_;
-  uint32_t nkeys_ = 0;
+  uint32_t nkeys_;
 	
-  bool ready_ = false;
-  bool done_ = false;
+  bool ready_;
+  bool done_;
 	
-  uint32_t nparts_ = 0;
-  uint32_t done_count_ = 0;
+  uint32_t nparts_;
+  uint32_t done_count_;
 
   // output buffer
-  size_t nbuffers_ = 0; 
-  Partition** buffers_ = NULL;
+  size_t nbuffers_; 
+  Partition** buffers_;
 
   // locking
-  pthread_mutex_t mutex_ = PTHREAD_MUTEX_INITIALIZER;
+  pthread_mutex_t mutex_;
 
  public:
   // constructor for creating base table

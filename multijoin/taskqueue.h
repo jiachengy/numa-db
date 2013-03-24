@@ -41,13 +41,14 @@ class Tasklist
   Table *in_;
   Table *out_;
   ShareLevel share_level_;
-  pthread_mutex_t mutex_ = PTHREAD_MUTEX_INITIALIZER;
+  pthread_mutex_t mutex_;
   
  public:
   Tasklist(Table *in, Table *out, ShareLevel level) {
     in_ = in;
     out_ = out;
     share_level_ = level;
+    pthread_mutex_init(&mutex_, NULL);
   }
 
   ~Tasklist() {
@@ -67,6 +68,7 @@ class Tasklist
   Task* Fetch();
   Task* FetchAtomic();
 
+  bool exhausted() { return tasks_.empty() && in_->ready(); }
   bool empty() { return tasks_.empty(); }
 
   size_t size() { return tasks_.size(); }
@@ -83,10 +85,12 @@ class Taskqueue
  private:
   list<Tasklist*> actives_;
   vector<Tasklist*> queues_;
-  pthread_mutex_t mutex_ = PTHREAD_MUTEX_INITIALIZER;
+  pthread_mutex_t mutex_;
 
  public:
-  Taskqueue() {}
+  Taskqueue() {
+    pthread_mutex_init(&mutex_, NULL);
+  }
   ~Taskqueue() {
     pthread_mutex_destroy(&mutex_);
   }

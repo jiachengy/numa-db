@@ -9,24 +9,24 @@ void PartitionTask::ProcessBlock(thread_t *my, block_t block, uint32_t mask, uin
 {
   // reset histogram
   memset(hist, 0, fanout * sizeof(uint32_t));
-
+  
+  // first scan: set histogram
   tuple_t *tuple = block.tuples;
   for (uint32_t i = 0; i < block.size; i++) {
     uint32_t idx = HASH_BIT_MODULO((tuple++)->key, mask, offset_);
     hist[idx]++;
   }
 
-  // check output buffer
+  // set output buffer
   for (uint32_t idx = 0; idx < fanout; idx++) {
     int buffer_id = my->tid * fanout + idx;
     Partition *outp = out_->GetBuffer(buffer_id);
 
     // if buffer does not exists,  or if not enough space
-    if (!outp || Partition::kPartitionSize - outp->size() < hist[idx]) {
+    if (!outp || Params::kPartitionSize - outp->size() < hist[idx]) {
       // if the buffer is full
-      if (outp) {
+      if (outp)
         out_->AddPartition(outp);
-      }
 
       // create a new buffer
       // switch the output buffer to the new one
@@ -35,8 +35,8 @@ void PartitionTask::ProcessBlock(thread_t *my, block_t block, uint32_t mask, uin
 
       out_->SetBuffer(buffer_id, np);
       outp = np;
-
     }
+
     dst[idx] = &outp->tuples()[outp->size()];
     outp->set_size(outp->size() + hist[idx]); // set size at once
   }
@@ -53,8 +53,6 @@ void PartitionTask::Finish(thread_t* my)
 {
   in_->Commit();
 
-  // Put back the partition if we use a recycler
-
   // check if I am the last one to finish?
   if (!in_->done())
     return;
@@ -70,15 +68,12 @@ void PartitionTask::Finish(thread_t* my)
   out_->set_ready();
 
   node_t *nodes = my->env->nodes();
+
   switch (out_->type()) {
   case OpNone: // Set termination flag
     my->env->set_done();
     return;
   case OpBuild: //  Unblock build
-    {
-      for (int node = 0; node < my->env->nnodes(); ++node)
-        nodes[node].queue->Unblock(out_->id());
-    }
     break;
   case OpProbe: // create probe task
     {
@@ -92,15 +87,15 @@ void PartitionTask::Finish(thread_t* my)
           probelist->AddTask(task);
         }
       }
-      // unblock probing queues
-      for (int node = 0; node < my->env->nnodes(); ++node)
-        nodes[node].queue->Unblock(out_->id());
     }
     break;
   default:
-    assert(false);
-    return;
+    break;
   }
+
+  // unblock probing queues
+  for (int node = 0; node < my->env->nnodes(); ++node)
+    nodes[node].queue->Unblock(out_->id());
 }
 
 
@@ -114,7 +109,6 @@ void PartitionTask::Run(thread_t *args)
   // process the partition in blocks  
   while (!part_->done()) {
     block_t block = part_->NextBlock();
-    assert(block.size > 0 && block.size <= Partition::kBlockSize);
     ProcessBlock(args, block, mask, fanout, hist, dst);    
   }
 
@@ -133,10 +127,9 @@ void BuildTask::Finish(thread_t* my, hashtable_t *ht)
 
   // We create a new probe task on this node
   Taskqueue *queue = my->node->queue;
-  int probe_task_id = probe_->id();
 
   Task *task = new ProbeTask(OpProbe, key_);
-  queue->AddTask(probe_task_id, task);
+  queue->AddTask(probe_->id(), task);
 
   // check if I am the last one to finish?
   if (!in_->done())
@@ -156,7 +149,6 @@ void BuildTask::Finish(thread_t* my, hashtable_t *ht)
 
 // They combine building and probing
 // Does it mean they will have better cache behavior?
-// Does it mean that I need to reorder the task list?
 void BuildTask::Run(thread_t *my)
 {
   uint32_t ntuples = 0;
@@ -168,22 +160,25 @@ void BuildTask::Run(thread_t *my)
 
   uint32_t nbuckets = ntuples;
   NEXT_POW_2(nbuckets);
-  nbuckets <<= 1; // make the hash table twice as large
+  //  nbuckets <<= 1; // make the hash table twice as large
   const uint32_t MASK = (nbuckets-1) << (Params::kNumRadixBits);
 
   hashtable_t *ht = hashtable_init(ntuples, nbuckets);
   int *bucket = ht->bucket;
   entry_t *next = ht->next;
 
+  // Begin to build the hash table
   int i = 0;
   for (list<Partition*>::iterator it = parts.begin();
-       it != parts.end(); it++) {
+       it != parts.end(); ++it) {
+
     tuple_t *tuple = (*it)->tuples();
+
     for (uint32_t j = 0; j < (*it)->size(); j++) {
       uint32_t idx = HASH_BIT_MODULO(tuple->key, MASK, Params::kNumRadixBits);
       next[i].next = bucket[idx];
       next[i].tuple = *tuple;
-      bucket[idx] = ++i;
+      bucket[idx] = ++i; // pos starts from 1 instead of 0
       tuple++;
     }
   }
@@ -194,7 +189,6 @@ void BuildTask::Run(thread_t *my)
 
 void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
 {
-  tuple_t *tuple = block.tuples;
   const uint32_t MASK = (ht->nbuckets-1) << (Params::kNumRadixBits);
   int *bucket = ht->bucket;
   entry_t *next = ht->next;  
@@ -203,18 +197,18 @@ void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
   int buffer_id = my->tid * Params::kFanoutPass1 + part_->key();
   Partition *outp = out_->GetBuffer(buffer_id);
 
-  for(uint32_t i = 0; i < block.size; i++ ){
+  tuple_t *tuple = block.tuples;
+  for(uint32_t i = 0; i < block.size; i++, tuple++){
     uint32_t idx = HASH_BIT_MODULO(tuple->key, MASK, Params::kNumRadixBits);
     for(int hit = bucket[idx]; hit > 0; hit = next[hit-1].next){
       if(tuple->key == next[hit-1].tuple.key){
-        // Verion 1: check output for every match
+        // V1: check output for every match
 
         // there is no space
-        if (!outp || Partition::kPartitionSize == outp->size()) {
+        if (!outp || Params::kPartitionSize == outp->size()) {
           // if the buffer is full
-          if (outp) {
+          if (outp)
             out_->AddPartition(outp);
-          }
 
           // create a new buffer
           // switch the output buffer to the new one
@@ -228,7 +222,12 @@ void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
         jr.key = tuple->payload;
         jr.payload = next[hit-1].tuple.payload;
         outp->Append(jr);
-      }
+               
+        // tuple_t *t = &outp->tuples()[outp->size()];
+      //   t->key = tuple->payload;
+      //   t->payload = next[hit-1].tuple.payload;
+      //   outp->set_size(outp->size() + 1);
+      }      
     }
   }
 }
@@ -243,7 +242,6 @@ void UnitProbeTask::Run(thread_t *my)
   // process in blocks
   while (!part_->done()) {
     block_t block = part_->NextBlock();
-    assert(block.size > 0 && block.size <= Partition::kBlockSize);
     ProbeBlock(my, block, ht);    
   }
 
@@ -261,9 +259,8 @@ void UnitProbeTask::Finish(thread_t* my)
   // Finish all remaining buffered partitions
   for (int i = 0; i < out_->nbuffers(); i++) {
     Partition *outp = out_->GetBuffer(i);
-    if (outp) {
+    if (outp)
       out_->AddPartition(outp);
-    }
   }
 
   // set output table to ready

@@ -8,6 +8,12 @@
 
 using namespace std;
 
+inline void run_task(Task *task, thread_t *my)
+{
+  task->Run(my);      
+  delete task;
+}
+
 void* work_thread(void *param)
 {
   thread_t *my = (thread_t*)param;
@@ -23,89 +29,94 @@ void* work_thread(void *param)
     // check termination
     if (my->env->done())
       break;
-
+    
+    // poll local tasks
     if (my->localtasks) {
-      LOG(INFO) << "Thread " << my->tid << " fetching from localtasks " << my->localtasks->size();
-
-      task = my->localtasks->Fetch();
-      if (task == NULL) { // local tasks are exhausted
-        //        delete my->localtasks; // hey. maybe we should not delete it, otherwise the stolen worker will have trouble
-        my->localtasks = NULL;
-      }
-      if (task)
+      task = my->localtasks->FetchAtomic();
+      if (task) {
         my->local++;
-    }
-
-    if (!task) {
-      task = queue->Fetch();
-      // if current queue is build or probe
-      // we will expand the tasks to our local queue
-      if (task)
-        my->shared++;
-    }
-
-
-    if (!task) {
-      if (my->stolentasks) {
-        task = my->stolentasks->Fetch();
-        if (task == NULL)
-          my->stolentasks = NULL;
-        else {
-          my->remote++;
-        }
+        run_task(task, my);
+        continue;
       }
+      else if (my->localtasks->exhausted())
+        my->localtasks = NULL;
     }
 
-    if (!task) {
+    // poll node shared tasks
+    task = queue->Fetch();
+    if (task) {
+      my->shared++;
+      run_task(task, my);
+      continue;
+    }
+
+    // poll buffered stolen task
+    if (my->stolentasks) {
+      task = my->stolentasks->FetchAtomic();
+      if (task) {
+        my->remote++;
+        run_task(task, my);
+        continue;
+      }
+      else if (my->stolentasks->exhausted())
+        my->stolentasks = NULL;
+    }
+
+    if (!my->stolentasks) {
+      // no bufferd task available
       // is there local probe work we can steal?
       thread_t **groups = my->node->groups;
+      int next_cpu = my->node->next_cpu;
       for (int i = 0; i < my->node->nthreads; i++) {
-        thread_t *t = groups[i];
+        thread_t *t = groups[next_cpu];
         if (t->tid == my->tid) // skip myself
           continue;
-        if (t->localtasks && t->localtasks->type()==OpProbe) { // it has local probing task
+        ++next_cpu;
+        if (next_cpu == my->node->nthreads)
+          next_cpu = 0;
+
+        if (t->localtasks) {
           my->stolentasks = t->localtasks; // steal it!
+
+          pthread_mutex_lock(&my->node->lock);
+          my->node->next_cpu = next_cpu;
+          pthread_mutex_unlock(&my->node->lock);
+
           break;
         }
       }
-      
-      if (my->stolentasks) {
-        LOG(INFO) << "Haha. We have stolen a local probing list.";
-      }
-      else {
-        // there is no local probing we can steal
-        // is there global partitioning we can steal?
-        node_t *nodes = my->env->nodes();
-				
-        for (int i = 0; i < my->env->nnodes(); i++) {
-          if (i == my->node_id) // skip my node
-            continue;
-          Tasklist *part_tasks = nodes[i].queue->GetListByType(OpPartition);
-          if (part_tasks) {
-            my->stolentasks = part_tasks;
-            break;
-          }
-        }
-        if (my->stolentasks) {
-          LOG(INFO) << "Heyhey, we have stolen a remote partition list.";
-        }
-      }
-      
-      if (my->stolentasks) {
-        task = my->stolentasks->Fetch();
-        if (task)
-          my->remote++;
-      }
     }
-    
-    if (task) {
-      task->Run(my);
-      delete task;
+
+
+    if (!my->stolentasks) {
+      // there is no local probing we can steal
+      // is there global partitioning we can steal?
+      node_t *nodes = my->env->nodes();				
+      int next_node = my->node->next_node;
+      for (int i = 0; i < my->env->nnodes(); i++) {
+        if (next_node == my->node_id) // skip my node
+          continue;
+
+        Tasklist *part_tasks = nodes[next_node].queue->GetListByType(OpPartition);
+        ++next_node;
+        if (next_node == my->env->nnodes())
+          next_node = 0;
+
+        if (part_tasks) {
+          my->stolentasks = part_tasks;
+          //          LOG(INFO) << "Heyheyhey.";
+          break;
+        }
+      }
+
+      pthread_mutex_lock(&my->node->lock);
+      my->node->next_node = next_node;
+      pthread_mutex_unlock(&my->node->lock);
     }
   }
 
 
-  LOG(INFO) << "Thread " << my->tid << " is existing.";
+  //  LOG(INFO) << "Thread " << my->tid << " is existing.";
   return NULL;
 }
 
@@ -121,6 +132,8 @@ void Hashjoin(Table *relR, Table *relS, int nthreads)
 
   LOG(INFO) << "Task initialized.";
 
+  long t = micro_time();
+
   pthread_t threads[nthreads];
   // start threads
   for (int i = 0; i < nthreads; i++) {
@@ -128,15 +141,17 @@ void Hashjoin(Table *relR, Table *relS, int nthreads)
   }
 
   // join threads
-  thread_t *infos = env->threads();
+  //thread_t *infos = env->threads();
   for (int i = 0; i < nthreads; i++) {
     pthread_join(threads[i], NULL);
-
-    cout << "Thread[" << i << "]:"
-         << infos[i].local << ","
-         << infos[i].shared << ","
-         << infos[i].remote << endl;
+    // cout << "Thread[" << i << "]:"
+    //      << infos[i].local << ","
+    //      << infos[i].shared << ","
+    //      << infos[i].remote << endl;
   }
+
+  t = (micro_time() - t) / 1000;
+  LOG(INFO) << "Running time: " << t << " msec";
 
   LOG(INFO) << "All threads join.";
 

@@ -1,8 +1,8 @@
 #ifndef ENV_H_
 #define ENV_H_
 
+#include <pthread.h>
 #include <numa.h>
-#include <map>
 
 class Environment;
 
@@ -17,7 +17,11 @@ struct node_t {
   int nthreads;
   thread_t **groups;
 
+  int next_node;
+  int next_cpu;
+
   Taskqueue *queue;
+  pthread_mutex_t lock;
 };
 
 
@@ -47,8 +51,8 @@ class Environment
   const int nnodes_;
 
   // node and thread info
-  node_t *nodes_ = NULL; // all nodes structure
-  thread_t *threads_ = NULL;
+  node_t *nodes_; // all nodes structure
+  thread_t *threads_;
 
   // table info
   vector<Table*> tables_;	
@@ -60,10 +64,10 @@ class Environment
   vector<Tasklist*> probes_;
 
   // build table
-  Table *build_ = NULL;
+  Table *build_;
 
   // indicate the query is finished.
-  bool done_ = false;
+  bool done_;
 
  public:
   Environment(int nthreads);

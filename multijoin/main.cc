@@ -3,6 +3,7 @@
 #include <glog/logging.h> // logging
 #include <gflags/gflags.h> // logging
 
+#include "params.h"
 #include "types.h"
 #include "builder.h"
 #include "table.h"
@@ -13,28 +14,28 @@ using namespace std;
 
 int main(int argc, char *argv[])
 {
-	google::InitGoogleLogging(argv[0]);
-	FLAGS_logtostderr = true;
+  google::InitGoogleLogging(argv[0]);
+  FLAGS_logtostderr = true;
 
-    if (argc != 2) {
-      cout << "Usage: ./test <nthreads>" << endl;
-      exit(1);
-    }
+  if (argc != 2) {
+    cout << "Usage: ./test <nthreads>" << endl;
+    exit(1);
+  }
       
-    int nthreads = atoi(argv[1]);
+  int nthreads = atoi(argv[1]);
 
-	Table *relR = new Table(4, 0);
-	Table *relS = new Table(4, 0);
-	TableBuilder tb;
+  Table *relR = new Table(4, 0);
+  Table *relS = new Table(4, 0);
+  TableBuilder tb;
 
+  size_t sz = Params::kPartitionSize * 256;
+  LOG(INFO) << "Building tables.";
+  tb.Build(relR, sz, nthreads);
+  tb.Build(relS, sz, nthreads);
 
-	size_t sz = Partition::kPartitionSize * 128;
-	LOG(INFO) << "Building tables.";
-	tb.Build(relR, sz, nthreads);
-    tb.Build(relS, sz, nthreads);
-	LOG(INFO) << "Building done.";
+  Hashjoin(relR, relS, nthreads);
 
-    Hashjoin(relR, relS, nthreads);
+  LOG(INFO) << "Hash join done.";
 
-	LOG(INFO) << "Hash join done.";
+  return 0;
 }

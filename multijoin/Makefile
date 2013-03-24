@@ -1,5 +1,5 @@
-CC=g++-4.7
-CFLAGS=-std=c++11 -pthread -Wall
+CC=g++
+CFLAGS=-pthread -Wall -g
 LIBS=-lpthread -lnuma -lglog
 
 all : *.cc

@@ -51,13 +51,12 @@ class BuildTask : public Task
   void Finish(thread_t *my, hashtable_t *ht);
 
  public:
- BuildTask(OpType type, Table *in, Table *out, Table *probe, Table *probe_out, int key) : Task(type) {
+ BuildTask(OpType type, Table *in, Table *out, Table *probe, int key) : Task(type) {
     in_ = in;
     out_ = out;
     key_ = key;
     
     probe_ = probe;
-    probe_out_ = probe_out;
   }
 
   virtual void Run(thread_t *my);

@@ -5,7 +5,8 @@
 using namespace std;
 
 Environment::Environment(int nthreads)
-  : nthreads_(nthreads), nnodes_(num_numa_nodes())
+  : nthreads_(nthreads), nnodes_(num_numa_nodes()),
+    done_(false)
 {
   nodes_ = (node_t*)malloc(sizeof(node_t) * nnodes_);
   threads_ = (thread_t*)malloc(sizeof(thread_t) * nthreads);
@@ -16,6 +17,9 @@ Environment::Environment(int nthreads)
     n->nthreads = nthreads / nnodes_; // this is not accurate, unless we assign the threads round robin
     n->groups = (thread_t**)malloc(sizeof(thread_t*) * n->nthreads);
     n->queue = new Taskqueue();
+    n->next_node = (node + 1) % nnodes_;
+    n->next_cpu = 0;
+    pthread_mutex_init(&n->lock, NULL);
   }
 
   int node_idx[nnodes_];
@@ -46,25 +50,35 @@ Environment::~Environment()
   for (int node = 0; node < nnodes_; node++) {
     delete nodes_[node].queue;
     free(nodes_[node].groups);
-  }
-
-  for (int tid = 0; tid < nthreads_; tid++) {
-    if (threads_[tid].localtasks != NULL)
-      delete threads_[tid].localtasks;
+    pthread_mutex_destroy(&nodes_[node].lock);
   }
 
   free(threads_);
   free(nodes_);
 
+  LOG(INFO) << "deallocate structure";
+  
   // deallocate tables
+  int i = 0;
   for (vector<Table*>::iterator it = tables_.begin();
-       it != tables_.end(); it++)
+       it != tables_.end(); it++, i++)
     delete *it;
+
+  LOG(INFO) << "deallocate tables";
 
   // deallocate tasks
   for (vector<Tasklist*>::iterator it = tasks_.begin();
        it != tasks_.end(); it++)
     delete *it;
+
+  LOG(INFO) << "deallocate tasklists";
+
+  for (vector<Tasklist*>::iterator it = probes_.begin();
+       it != probes_.end(); it++)
+    delete *it;
+
+  LOG(INFO) << "deallocate probes";
+
 }
 
 // Test Partition Task
@@ -87,7 +101,7 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
                             nthreads_ * Params::kFanoutPass1);
 
   // Initialize probe lists
-  for (int key = 0; key < Params::kFanoutPass1; key++)
+  for (int key = 0; key < Params::kFanoutPass1; ++key)
     probes_.push_back(new Tasklist(sparted, result, ShareLocal));
 
   build_ = rbuild;
@@ -102,7 +116,7 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
 
   Tasklist *buildR = new Tasklist(rparted, rbuild, ShareGlobal);
   for (int key = 0; key < Params::kFanoutPass1; key++) {
-    Task *task = new BuildTask(OpBuild, rparted, rbuild, sparted, result, key);
+    Task *task = new BuildTask(OpBuild, rparted, rbuild, sparted, key);
     buildR->AddTask(task);
   }
   tasks_.push_back(buildR);
@@ -115,15 +129,15 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
     tasks_.push_back(partS);
 
     // create partition task from table R and table S
-    list<Partition*>& parts = rt->GetPartitionsByNode(node);
-    for (list<Partition*>::iterator it = parts.begin(); 
-         it != parts.end(); it++) {
+    list<Partition*>& pr = rt->GetPartitionsByNode(node);
+    for (list<Partition*>::iterator it = pr.begin(); 
+         it != pr.end(); it++) {
       partR->AddTask(new PartitionTask(OpPartition, *it, rt, rparted, 0, Params::kNumBitsPass1));
     }
 
-    parts = st->GetPartitionsByNode(node);
-    for (list<Partition*>::iterator it = parts.begin(); 
-         it != parts.end(); it++) {
+    list<Partition*>& ps = st->GetPartitionsByNode(node);
+    for (list<Partition*>::iterator it = ps.begin(); 
+         it != ps.end(); it++) {
       partS->AddTask(new PartitionTask(OpPartition, *it, st, sparted, 0, Params::kNumBitsPass1));
     }
 

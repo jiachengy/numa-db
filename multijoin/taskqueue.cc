@@ -12,8 +12,10 @@ Task* Tasklist::Fetch()
 Task* Tasklist::FetchAtomic()
 {
   pthread_mutex_lock(&mutex_);
-  if (tasks_.empty())
+  if (tasks_.empty()) {
+    pthread_mutex_unlock(&mutex_);
     return NULL;
+  }
   Task* next = tasks_.front();
   tasks_.pop();
   pthread_mutex_unlock(&mutex_);

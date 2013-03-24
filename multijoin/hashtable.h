@@ -9,10 +9,10 @@ struct entry_t {
 };
 
 struct hashtable_t {
-  entry_t *next = NULL;
-  int *bucket = NULL;
-  uint32_t nbuckets = 0;
-  uint32_t ntuples = 0;
+  entry_t *next;
+  int *bucket;
+  uint32_t nbuckets;
+  uint32_t ntuples;
 };
 
 void hashtable_free(hashtable_t *ht);

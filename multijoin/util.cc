@@ -92,7 +92,8 @@ int node_of_cpu(int cpu)
 
 void* alloc(size_t sz)
 {
-  return numa_alloc_local(sz);
+  return malloc(sz);
+  //  return numa_alloc_local(sz);
 }
 
 // be careful when used in global thread
@@ -109,7 +110,8 @@ void* alloc_interleaved(size_t sz)
 
 void dealloc(void *p, size_t sz)
 {
-  numa_free(p, sz);
+  free(p);
+  //  numa_free(p, sz);
 }
 
 uint64_t micro_time(void)

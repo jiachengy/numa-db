@@ -3,8 +3,10 @@
 
 void hashtable_free(hashtable_t *ht)
 {
-  dealloc(ht->next, sizeof(entry_t) * ht->ntuples);
-  dealloc(ht->bucket, sizeof(int) * ht->nbuckets);
+  if (ht->next)
+    dealloc(ht->next, sizeof(entry_t) * ht->ntuples);
+  if (ht->bucket)
+    dealloc(ht->bucket, sizeof(int) * ht->nbuckets);
   free(ht);
 }
 
