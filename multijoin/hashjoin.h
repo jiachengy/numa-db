@@ -48,7 +48,7 @@ class BuildTask : public Task
   Table *probe_;
   Table *probe_out_;
 
-  void Finish(thread_t *my, hashtable_t *ht);
+  void Finish(thread_t *my, Partition *htp);
 
  public:
  BuildTask(OpType type, Table *in, Table *out, Table *probe, int key) : Task(type) {

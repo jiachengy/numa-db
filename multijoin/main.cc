@@ -14,6 +14,8 @@ using namespace std;
 
 int main(int argc, char *argv[])
 {
+  srand(time(NULL));
+
   google::InitGoogleLogging(argv[0]);
   FLAGS_logtostderr = true;
 
@@ -23,19 +25,22 @@ int main(int argc, char *argv[])
   }
       
   int nthreads = atoi(argv[1]);
+  size_t sz = Params::kPartitionSize * 16;
+  size_t mem_limit = 1024L  * 1024L * 1024L * 4; // 4GB
 
-  Table *relR = new Table(4, 0);
-  Table *relS = new Table(4, 0);
-  TableBuilder tb;
+  Environment *env = new Environment(nthreads, mem_limit);
+  LOG(INFO) << "Env set up.";
 
-  size_t sz = Params::kPartitionSize * 256;
-  LOG(INFO) << "Building tables.";
-  tb.Build(relR, sz, nthreads);
-  tb.Build(relS, sz, nthreads);
+  Table *relR = env->BuildTable(sz);
+  Table *relS = env->BuildTable(sz);
+  LOG(INFO) << "Building tables done.";
 
-  Hashjoin(relR, relS, nthreads);
+  HashJoin(env, relR, relS);
 
   LOG(INFO) << "Hash join done.";
+
+  delete env;
+  LOG(INFO) << "Env deleted.";
 
   return 0;
 }

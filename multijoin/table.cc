@@ -4,14 +4,17 @@
 
 int Table::__autoid__ = 0;
 
-Partition::~Partition() {
+// NO memory release here
+Partition::~Partition()
+{
   if (tuples_) {
-    Dealloc();
+    //    Dealloc();
     tuples_ = NULL;
   }
 
   if (hashtable_) {
-    hashtable_free(hashtable_);
+    //    hashtable_free(hashtable_);
+    free(hashtable_); // just deallocate the hashtable_t
     hashtable_ = NULL;
   }
 }
@@ -53,7 +56,9 @@ void Partition::Reset() { 	// used by the recycler
   ready_ =false;
   size_ = 0;
   curpos_ = 0;
-  hashtable_ = NULL;
+
+  if (hashtable_)
+    hashtable_reset(hashtable_);
 }
 
 
@@ -98,8 +103,8 @@ Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers)
 }
 
 Table::~Table() {
-   if (buffers_)
-     free(buffers_);
+  if (buffers_)
+    free(buffers_);
 
   for (uint32_t node = 0; node < nnodes_; ++node) {
     list<Partition*> &pnode = pnodes_[node];

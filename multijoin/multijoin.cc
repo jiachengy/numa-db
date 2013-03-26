@@ -121,12 +121,8 @@ void* work_thread(void *param)
 }
 
 // two way hash join
-void Hashjoin(Table *relR, Table *relS, int nthreads)
+void HashJoin(Environment *env, Table *relR, Table *relS)
 {
-  // init the environment
-  Environment *env = new Environment(nthreads);
-  LOG(INFO) << "Environment set up.";
-
   // init the task queues
   env->CreateJoinTasks(relR, relS);
 
@@ -134,26 +130,45 @@ void Hashjoin(Table *relR, Table *relS, int nthreads)
 
   long t = micro_time();
 
-  pthread_t threads[nthreads];
+  pthread_t threads[env->nthreads()];
   // start threads
-  for (int i = 0; i < nthreads; i++) {
+  for (int i = 0; i < env->nthreads(); i++) {
     pthread_create(&threads[i], NULL, work_thread, (void*)&env->threads()[i]);
   }
 
   // join threads
-  //thread_t *infos = env->threads();
-  for (int i = 0; i < nthreads; i++) {
+
+  for (int i = 0; i < env->nthreads(); i++)
     pthread_join(threads[i], NULL);
-    // cout << "Thread[" << i << "]:"
-    //      << infos[i].local << ","
-    //      << infos[i].shared << ","
-    //      << infos[i].remote << endl;
-  }
 
   t = (micro_time() - t) / 1000;
+
+  thread_t *infos = env->threads();
+  for (int i = 0; i < env->nthreads(); i++) {
+    cout << "Thread[" << cpu_of_thread_rr(i) << "]:"
+         << infos[i].local << ","
+         << infos[i].shared << ","
+         << infos[i].remote << endl;
+  }
+
+  for (int i = 0; i < env->nnodes(); i++) {
+    int nht = env->GetTable(0)->GetPartitionsByNode(i).size();
+    cout << "node " << i << " has " << nht << endl;
+  }
+
+
+  for (int i = 0; i < env->nnodes(); i++) {
+    int nht = env->GetTable(4)->GetPartitionsByNode(i).size();
+    cout << "node " << i << " has " << nht << endl;
+  }
+
+  for (int i = 0; i < env->nnodes(); i++) {
+    int nht = env->GetTable(5)->GetPartitionsByNode(i).size();
+    cout << "node " << i << " has " << nht << endl;
+  }
+
+
   LOG(INFO) << "Running time: " << t << " msec";
 
   LOG(INFO) << "All threads join.";
-
-  delete env;
 }

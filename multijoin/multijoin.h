@@ -1,6 +1,9 @@
 #ifndef MULTIJOIN_H_
 #define MULTIJOIN_H_
 
-void Hashjoin(Table *relR, Table *relS, int nthreads);
+#include "env.h"
+#include "table.h"
+
+void HashJoin(Environment *env, Table *relR, Table *relS);
 
 #endif // MULTIJOIN_H_

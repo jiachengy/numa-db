@@ -74,6 +74,14 @@ void cpu_bind(int cpu)
   pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpu_set);
 }
 
+
+void node_bind(int node)
+{
+  int cpu = cores[node][0];
+  cpu_bind(cpu);
+}
+
+
 int get_running_cpu()
 {
   return sched_getcpu();

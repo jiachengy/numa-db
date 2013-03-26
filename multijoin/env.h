@@ -11,6 +11,7 @@ typedef struct thread_t thread_t;
 
 #include "taskqueue.h"
 #include "table.h"
+#include "recycler.h"
 
 struct node_t {
   int node_id;
@@ -34,6 +35,7 @@ struct thread_t {
 
   node_t *node; // pointer to local node info
   Environment *env; // pointer to global info
+  Recycler *recycler; // memory recycler
 
   // counters
   uint32_t local;
@@ -47,12 +49,14 @@ class Environment
 {
  private:
   // general info
-  const int nthreads_;
-  const int nnodes_;
+  const size_t nthreads_;
+  const size_t nnodes_;
+  const size_t memlimit_;
 
   // node and thread info
   node_t *nodes_; // all nodes structure
   thread_t *threads_;
+  Recycler **recyclers_;
 
   // table info
   vector<Table*> tables_;	
@@ -69,8 +73,11 @@ class Environment
   // indicate the query is finished.
   bool done_;
 
+  static void*init_thread(void *params);
+  void Init();
+
  public:
-  Environment(int nthreads);
+  Environment(int nthreads, size_t memory_limit);
   ~Environment();
 
   node_t *nodes() { return nodes_; }
@@ -91,6 +98,8 @@ class Environment
     tables_.push_back(table);
   }
 
+
+  Table* BuildTable(size_t sz);
   void CreateJoinTasks(Table *rt, Table *st);
 };
 

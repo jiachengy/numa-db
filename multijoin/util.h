@@ -23,6 +23,7 @@ uint32_t num_numa_nodes();
 
 
 void cpu_bind(int cpu);
+void node_bind(int node);
 void cpu_membind(int cpu);
 void node_membind(int node);
 

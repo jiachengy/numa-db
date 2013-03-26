@@ -16,7 +16,9 @@ struct hashtable_t {
 };
 
 void hashtable_free(hashtable_t *ht);
-hashtable_t *hashtable_init(int ntuples, int nbuckets);
+hashtable_t *hashtable_init(int ntuples);
+hashtable_t *hashtable_init_noalloc(int ntuples);
+void hashtable_reset(hashtable_t *ht);
 
 
 #endif // HASHTABLE_H_

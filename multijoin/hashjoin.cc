@@ -30,9 +30,15 @@ void PartitionTask::ProcessBlock(thread_t *my, block_t block, uint32_t mask, uin
 
       // create a new buffer
       // switch the output buffer to the new one
+
+#ifdef PRE_ALLOC
+      Partition *np = my->recycler->GetEmptyPartition();
+      np->set_key(idx);
+#else
       Partition *np = new Partition(my->node_id, idx);
       np->Alloc();
-
+      
+#endif
       out_->SetBuffer(buffer_id, np);
       outp = np;
     }
@@ -45,6 +51,8 @@ void PartitionTask::ProcessBlock(thread_t *my, block_t block, uint32_t mask, uin
   tuple = block.tuples;
   for (uint32_t i = 0; i < block.size; i++) {
     uint32_t idx = HASH_BIT_MODULO(tuple->key, mask, offset_);
+    int sign = (in_->id() == 0) ? -1 : 1;
+    assert(tuple->payload == tuple->key + sign);
     *(dst[idx]++) = *(tuple++);
   }
 }
@@ -115,11 +123,9 @@ void PartitionTask::Run(thread_t *args)
   Finish(args);
 }
 
-void BuildTask::Finish(thread_t* my, hashtable_t *ht)
+void BuildTask::Finish(thread_t* my, Partition *htp)
 {
   // hash table partition
-  Partition *htp = new Partition(my->node_id, key_);
-  htp->set_hashtable(ht);
   out_->AddPartition(htp);
 
   // Commit
@@ -154,21 +160,29 @@ void BuildTask::Run(thread_t *my)
   uint32_t ntuples = 0;
   list<Partition*> &parts = in_->GetPartitionsByKey(key_);
   for (list<Partition*>::iterator it = parts.begin();
-       it != parts.end(); it++) {
+       it != parts.end(); it++)
     ntuples += (*it)->size();
-  }
 
-  uint32_t nbuckets = ntuples;
-  NEXT_POW_2(nbuckets);
-  //  nbuckets <<= 1; // make the hash table twice as large
-  const uint32_t MASK = (nbuckets-1) << (Params::kNumRadixBits);
+  if (ntuples >= Params::kMaxHtTuples)
+    LOG(INFO) << ntuples;
+  assert(ntuples < Params::kMaxHtTuples);
 
-  hashtable_t *ht = hashtable_init(ntuples, nbuckets);
+#ifdef PRE_ALLOC
+  Partition *htp = my->recycler->GetEmptyHT();
+  hashtable_t *ht = htp->hashtable();
+  htp->set_key(key_);
+#else
+  Partition *htp = new Partition(my->node_id, key_);
+  hashtable_t *ht = hashtable_init(ntuples);
+  htp->set_hashtable(ht);
+#endif
+
   int *bucket = ht->bucket;
   entry_t *next = ht->next;
+  const uint32_t MASK = (ht->nbuckets-1) << (Params::kNumRadixBits);
 
   // Begin to build the hash table
-  int i = 0;
+  uint32_t i = 0;
   for (list<Partition*>::iterator it = parts.begin();
        it != parts.end(); ++it) {
 
@@ -178,12 +192,17 @@ void BuildTask::Run(thread_t *my)
       uint32_t idx = HASH_BIT_MODULO(tuple->key, MASK, Params::kNumRadixBits);
       next[i].next = bucket[idx];
       next[i].tuple = *tuple;
+
+      assert(tuple->payload == tuple->key - 1);
+      
       bucket[idx] = ++i; // pos starts from 1 instead of 0
       tuple++;
     }
   }
 
-  Finish(my, ht);
+  assert(i == ntuples);
+
+  Finish(my, htp);
 }
 
 
@@ -201,6 +220,8 @@ void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
   for(uint32_t i = 0; i < block.size; i++, tuple++){
     uint32_t idx = HASH_BIT_MODULO(tuple->key, MASK, Params::kNumRadixBits);
     for(int hit = bucket[idx]; hit > 0; hit = next[hit-1].next){
+      assert(tuple->payload == tuple->key + 1);
+
       if(tuple->key == next[hit-1].tuple.key){
         // V1: check output for every match
 
@@ -212,8 +233,13 @@ void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
 
           // create a new buffer
           // switch the output buffer to the new one
+#ifdef PRE_ALLOC
+          Partition *np = my->recycler->GetEmptyPartition();
+          np->set_key(part_->key());
+#else
           Partition *np = new Partition(my->node_id, part_->key());
           np->Alloc();
+#endif
 
           out_->SetBuffer(buffer_id, np);
           outp = np;
@@ -222,7 +248,7 @@ void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
         jr.key = tuple->payload;
         jr.payload = next[hit-1].tuple.payload;
         outp->Append(jr);
-               
+
         // tuple_t *t = &outp->tuples()[outp->size()];
       //   t->key = tuple->payload;
       //   t->payload = next[hit-1].tuple.payload;

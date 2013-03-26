@@ -1,17 +1,19 @@
 #include "env.h"
 #include "params.h"
 #include "hashjoin.h"
+#include "builder.h"
 
 using namespace std;
 
-Environment::Environment(int nthreads)
+Environment::Environment(int nthreads, size_t memory_limit)
   : nthreads_(nthreads), nnodes_(num_numa_nodes()),
-    done_(false)
+    memlimit_(memory_limit), done_(false)
 {
   nodes_ = (node_t*)malloc(sizeof(node_t) * nnodes_);
   threads_ = (thread_t*)malloc(sizeof(thread_t) * nthreads);
+  recyclers_ = (Recycler**)malloc(sizeof(Recycler*) * nnodes_);
 
-  for (int node = 0; node < nnodes_; node++) {
+  for (uint32_t node = 0; node < nnodes_; node++) {
     node_t *n = &nodes_[node];
     n->node_id = node;
     n->nthreads = nthreads / nnodes_; // this is not accurate, unless we assign the threads round robin
@@ -21,6 +23,10 @@ Environment::Environment(int nthreads)
     n->next_cpu = 0;
     pthread_mutex_init(&n->lock, NULL);
   }
+
+#ifdef PRE_ALLOC
+  Init();
+#endif
 
   int node_idx[nnodes_];
   memset(node_idx, 0, sizeof(int) * nnodes_);
@@ -41,20 +47,26 @@ Environment::Environment(int nthreads)
     t->local = 0;
     t->shared = 0;
     t->remote = 0;
+
+    t->recycler = recyclers_[node];
+
     nodes_[node].groups[node_idx[node]++] = t;
   }
 }
 
 Environment::~Environment()
 {
-  for (int node = 0; node < nnodes_; node++) {
+  for (uint32_t node = 0; node < nnodes_; node++) {
     delete nodes_[node].queue;
     free(nodes_[node].groups);
     pthread_mutex_destroy(&nodes_[node].lock);
+
+    delete recyclers_[node];
   }
 
   free(threads_);
   free(nodes_);
+  free(recyclers_);
 
   LOG(INFO) << "deallocate structure";
   
@@ -81,7 +93,42 @@ Environment::~Environment()
 
 }
 
-// Test Partition Task
+struct InitArg
+{
+  int node;
+  size_t capacity;
+  Recycler *recycler;
+};
+
+void*
+Environment::init_thread(void *params)
+{
+  InitArg *args = (InitArg*)params;
+  
+  node_bind(args->node);
+  args->recycler = new Recycler(args->node, args->capacity);
+  
+  return NULL;
+}
+
+void
+Environment::Init()
+{
+  pthread_t threads[nnodes_];
+  InitArg args[nnodes_];
+  for (uint32_t i = 0; i < nnodes_; i++) {
+    args[i].node = i;
+    args[i].capacity = memlimit_;
+    pthread_create(&threads[i], NULL, &Environment::init_thread, (void*)&args[i]);
+  }
+
+  for (uint32_t i = 0; i < nnodes_; i++) {
+    pthread_join(threads[i], NULL);
+    recyclers_[i] = args[i].recycler;
+  }
+}
+
+
 void Environment::CreateJoinTasks(Table *rt, Table *st)
 {
   rt->set_type(OpPartition);
@@ -121,7 +168,7 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
   }
   tasks_.push_back(buildR);
 
-  for (int node = 0; node < nnodes_; node++) {
+  for (uint32_t node = 0; node < nnodes_; node++) {
     Tasklist *partR = new Tasklist(rt, rparted, ShareNode);
     tasks_.push_back(partR);
 
@@ -154,4 +201,16 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
     tq->Unblock(partS->id());
   }
 
+}
+
+
+Table*
+Environment::BuildTable(size_t sz)
+{
+  Table *table = new Table(nnodes_, 0);
+
+  TableBuilder tb(recyclers_);
+  tb.Build(table, sz, nthreads_);
+
+  return table;
 }

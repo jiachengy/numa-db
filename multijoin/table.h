@@ -37,6 +37,7 @@ class Partition {
   uint32_t curpos_;
   hashtable_t *hashtable_;
 
+
  public:
   Partition(int node, int key) 
     : node_(node), key_(key),
@@ -45,15 +46,20 @@ class Partition {
     hashtable_(NULL) {}
   ~Partition();
 
+
+  // Called only if recycler is not used
   void Alloc();
   void Dealloc();
+
   block_t NextBlock();
   void Reset();
   void Append(tuple_t tuple) { tuples_[size_++] = tuple; }
 
   tuple_t* tuples() { return tuples_; }
-  void set_size(size_t sz) { size_ = sz; }
+  void set_data(void *data) { tuples_ = (tuple_t*)data; }
+
   size_t size() { return size_; }
+  void set_size(size_t sz) { size_ = sz; }
 
   hashtable_t* hashtable() { return hashtable_; }
   void set_hashtable(hashtable_t *ht) { hashtable_ = ht; }
@@ -108,7 +114,6 @@ class Table {
 
   list<Partition*>& GetPartitionsByNode(int node) {return pnodes_[node];}
   list<Partition*>& GetPartitionsByKey(int key) { return pkeys_[key]; }
-
 
   Partition* GetBuffer(int buffer_id) {return buffers_[buffer_id];}
   void SetBuffer(int buffer_id, Partition *buffer) {buffers_[buffer_id] = buffer;}
