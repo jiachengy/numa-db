@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -128,4 +129,46 @@ uint64_t micro_time(void)
   struct timezone z;
   gettimeofday(&t, &z);
   return t.tv_sec * 1000000 + t.tv_usec;
+}
+
+
+mt_state_t *mt_init(uint32_t seed)
+{
+  uint64_t i;
+  mt_state_t *state = (mt_state_t*)malloc(sizeof(mt_state_t));
+  assert(state != NULL);
+  uint32_t *n = state->num;
+  n[0] = seed;
+  for (i = 0 ; i != 623 ; ++i)
+    n[i + 1] = 0x6c078965 * (n[i] ^ (n[i] >> 30));
+  state->index = 624;
+  return state;
+}
+
+uint32_t mt_next(mt_state_t *state)
+{
+  uint32_t y, *n = state->num;
+  if (state->index == 624) {
+    uint64_t i = 0;
+    do {
+      y = n[i] & 0x80000000;
+      y += n[i + 1] & 0x7fffffff;
+      n[i] = n[i + 397] ^ (y >> 1);
+      n[i] ^= 0x9908b0df & -(y & 1);
+    } while (++i != 227);
+    n[624] = n[0];
+    do {
+      y = n[i] & 0x80000000;
+      y += n[i + 1] & 0x7fffffff;
+      n[i] = n[i - 227] ^ (y >> 1);
+      n[i] ^= 0x9908b0df & -(y & 1);
+    } while (++i != 624);
+    state->index = 0;
+  }
+  y = n[state->index++];
+  y ^= (y >> 11);
+  y ^= (y << 7) & 0x9d2c5680;
+  y ^= (y << 15) & 0xefc60000;
+  y ^= (y >> 18);
+  return y;
 }

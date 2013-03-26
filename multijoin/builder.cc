@@ -19,15 +19,13 @@ Partition* PartitionBuilder::Build(size_t size, Recycler *recycler)
   p->Alloc();
 #endif
 
-  //  uint32_t seed = time(NULL);	
-
+  uint32_t seed = rand();
+  mt_state_t *state = mt_init(seed);
 
   // what is the right way to generate data?
   tuple_t *tuples = p->tuples();
   for (unsigned int i = 0; i < size; i++) {
-    // tuples[i].key = rand_r(&seed);
-    // tuples[i].payload = tuples[i].key + (rand_r(&seed) % 2);
-    tuples[i].key = rand() % 100000;
+    tuples[i].key = mt_next(state) % 100000;
     tuples[i].payload = tuples[i].key+ sign ;
   }
   p->set_size(size);

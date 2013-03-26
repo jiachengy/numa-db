@@ -11,4 +11,15 @@ void dealloc(void *p, size_t sz);
 uint64_t micro_time(void);
 int num_numa_nodes();
 
+// random number generators
+
+typedef struct {
+    uint32_t num[624];
+    uint64_t index;
+} mt_state_t;
+
+
+mt_state_t *mt_init(uint32_t seed);
+uint32_t mt_next(mt_state_t *state);
+
 #endif // UTIL_H_
