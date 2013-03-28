@@ -139,3 +139,30 @@ void Table::Commit(int size)
 
   pthread_mutex_unlock(&mutex_);
 }
+
+Table*
+Table::BuildTableFromRelation(relation_t *rel)
+{
+  Table *table = new Table(rel->nnodes, 0);
+
+  size_t ntuples_per_partition = Params::kPartitionSize / sizeof(tuple_t);
+  for (uint32_t node = 0; node < rel->nnodes; ++node) {
+    node_bind(node); // we ensure all the partition objects are allocated on that node
+
+    size_t ntuples = rel->ntuples_on_node[node];
+    tuple_t *tuple = rel->tuples[node];
+    while (ntuples > 0) {
+      size_t psize = (ntuples > ntuples_per_partition) ? ntuples_per_partition : ntuples;
+      Partition *p = new Partition(node, -1);
+      p->set_tuples(tuple);
+      p->set_size(psize);
+
+      tuple += psize;
+      ntuples -= psize;
+
+      table->AddPartition(p);
+    }
+  }
+
+  return table;
+}

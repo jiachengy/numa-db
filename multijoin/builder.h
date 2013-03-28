@@ -1,40 +1,28 @@
 #ifndef BUILDER_H_
 #define BUILDER_H_
 
-#include "table.h"
-#include "recycler.h"
+#include <pthread.h>
 
-class PartitionBuilder;
-class TableBuilder;
+#include "types.h" // relation_t
 
-struct BuildArg
+struct build_arg_t
 {
+  int tid;
   int cpu;
-  uint32_t nparts;
+  int node;
+  
+  int offset; /* offset within the group */
+  int firstkey;
+  size_t ntuples;
 
-  Partition **partitions;
-  PartitionBuilder *builder;
-  Recycler *recycler;
+  pthread_barrier_t *barrier_alloc;
+
+  relation_t *rel;
 };
 
+relation_t* relation_init();
+void relation_destroy(relation_t *rel);
 
-class PartitionBuilder
-{
- private:
- public:
-  Partition *Build(size_t size, Recycler *recycler);
-};
-
-class TableBuilder
-{
- private:
-  Recycler **recyclers_;
-  PartitionBuilder pbuilder_;
-  static void* build(void *params);
- public:
-  TableBuilder(Recycler **recyclers) : recyclers_(recyclers) {}
-
-  void Build(Table *table, size_t sz, uint32_t nthreads);
-};
+relation_t* parallel_build_relation_pk(size_t ntuples, uint32_t nthreads);
 
 #endif // BUILDER_H_

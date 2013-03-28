@@ -51,8 +51,6 @@ void PartitionTask::ProcessBlock(thread_t *my, block_t block, uint32_t mask, uin
   tuple = block.tuples;
   for (uint32_t i = 0; i < block.size; i++) {
     uint32_t idx = HASH_BIT_MODULO(tuple->key, mask, offset_);
-    int sign = (in_->id() == 0) ? -1 : 1;
-    assert(tuple->payload == tuple->key + sign);
     *(dst[idx]++) = *(tuple++);
   }
 }

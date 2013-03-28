@@ -8,6 +8,31 @@
 #define USE_PERF
 #endif
 
+#ifndef PERF_PARTITION
+#define PERF_PARTITION 1
+#endif
+
+#ifndef PERF_JOIN
+#define PERF_JOIN 0
+#endif
+
+#ifndef PERF_ALL
+#define PERF_ALL 0
+#endif
+
+
+#ifndef PER_CORE
+#define PER_CORE 1
+#endif
+
+#ifndef PER_SOCKET
+#define PER_SOCKET 0
+#endif
+
+#ifndef PER_SYSTEM
+#define PER_SYSTEM 0
+#endif
+
 typedef long long int counter_t;
 
 struct perf_t {
@@ -24,10 +49,12 @@ void perf_lib_cleanup();
 perf_t* perf_init();
 void perf_destroy(perf_t *perf);
 void perf_start(perf_t *perf);
-void perf_stop(perf_t *perf);
+void perf_reset(perf_t *perf);
+void perf_stop(perf_t *perf); /* stop the counter, but do not write the counter values */
 void perf_print(perf_t *perf);
 void perf_aggregate(perf_t *total, perf_t *perf);
-
+void perf_read(perf_t *perf);
+void perf_accum(perf_t *perf);
 
 
 #endif // PERF_H_

@@ -19,7 +19,7 @@
 
 
 uint32_t cpus();
-uint32_t num_numa_nodes();
+int num_numa_nodes();
 
 
 void cpu_bind(int cpu);
@@ -32,6 +32,7 @@ int get_running_node();
 
 int cpu_of_thread_rr(int tid);
 int node_of_cpu(int cpu);
+int cpu_of_node(int node, int idx);
 
 void* alloc_interleaved(size_t sz);
 void* alloc(size_t sz);
@@ -40,14 +41,14 @@ uint64_t micro_time(void);
 
 // random number generators
 
-typedef struct {
-    uint32_t num[624];
-    uint64_t index;
-} mt_state_t;
+typedef struct rand_state {
+  uint32_t num[624];
+  uint64_t index;
+} rand_state_t;
 
 
-mt_state_t *mt_init(uint32_t seed);
-uint32_t mt_next(mt_state_t *state);
+rand_state_t *rand_init(uint32_t seed);
 
+uint32_t rand_next(rand_state_t *state);
 
 #endif // UTIL_H_

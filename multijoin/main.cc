@@ -13,6 +13,9 @@
 
 #include "perf.h" // papi
 
+size_t Params::kNtuples = 0;
+size_t Params::kMaxHtTuples = 0;
+
 
 using namespace std;
 
@@ -32,23 +35,28 @@ int main(int argc, char *argv[])
     exit(1);
   }
       
-  int nthreads = atoi(argv[1]);
-  size_t sz = Params::kPartitionSize * 16;
-  size_t mem_limit = 1024L  * 1024L * 1024L * 4; // 4GB
+  //  int nthreads = atoi(argv[1]);
+  size_t ntuples = 128 * 1024 * 1024; // 128M
+  //  size_t mem_limit = 1024L  * 1024L * 1024L * 16; // 4GB
+  
+  // Params::kNtuples = ntuples;
+  // Params::kMaxHtTuples = ntuples / Params::kFanoutPass1 * 2;
+  // LOG(INFO) << "max ht tuples: " << Params::kMaxHtTuples;
 
-  Environment *env = new Environment(nthreads, mem_limit);
-  LOG(INFO) << "Env set up.";
+  // Environment *env = new Environment(nthreads, mem_limit);
+  // LOG(INFO) << "Env set up.";
 
-  Table *relR = env->BuildTable(sz);
-  Table *relS = env->BuildTable(sz);
-  LOG(INFO) << "Building tables done.";
+  relation_t *relR = parallel_build_relation_pk(ntuples, 4);
+  //  relation_t *relS = parallel_build_relation_pk(ntuples, 4);
 
-  HashJoin(env, relR, relS);
+  // LOG(INFO) << "Building tables done.";
 
-  LOG(INFO) << "Hash join done.";
+  // HashJoin(env, relR, relS);
 
-  delete env;
-  LOG(INFO) << "Env deleted.";
+  // LOG(INFO) << "Hash join done.";
+
+  // delete env;
+  // LOG(INFO) << "Env deleted.";
 
 
 #ifdef USE_PERF

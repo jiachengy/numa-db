@@ -43,7 +43,7 @@ uint32_t cpus(void)
   return cpu_num;
 }
 
-uint32_t num_numa_nodes()
+int num_numa_nodes()
 {
   return numa_max_node() + 1;
 }
@@ -99,6 +99,12 @@ int node_of_cpu(int cpu)
   return numa_node_of_cpu(cpu);
 }
 
+int cpu_of_node(int node, int idx)
+{
+  return cores[node][idx];
+}
+
+
 void* alloc(size_t sz)
 {
   return malloc(sz);
@@ -132,12 +138,11 @@ uint64_t micro_time(void)
 }
 
 
-mt_state_t *mt_init(uint32_t seed)
+rand_state_t *rand_init(uint32_t seed)
 {
-  uint64_t i;
-  mt_state_t *state = (mt_state_t*)malloc(sizeof(mt_state_t));
-  assert(state != NULL);
+  rand_state_t *state = (rand_state_t*)malloc(sizeof(rand_state_t));
   uint32_t *n = state->num;
+  uint64_t i;
   n[0] = seed;
   for (i = 0 ; i != 623 ; ++i)
     n[i + 1] = 0x6c078965 * (n[i] ^ (n[i] >> 30));
@@ -145,7 +150,7 @@ mt_state_t *mt_init(uint32_t seed)
   return state;
 }
 
-uint32_t mt_next(mt_state_t *state)
+uint32_t rand_next(rand_state_t *state)
 {
   uint32_t y, *n = state->num;
   if (state->index == 624) {

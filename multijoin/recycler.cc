@@ -51,7 +51,7 @@ Recycler::Alloc(size_t size)
 {
   for (uint32_t i = 0; i < size; i++) {
     Partition *p = new Partition(node_, -1);
-    p->set_data(data_ + cur_);
+    p->set_tuples((tuple_t*)(data_ + cur_));
     cur_ += Params::kPartitionSize * sizeof(tuple_t);
 
     assert(cur_ <= capacity_);
@@ -63,6 +63,7 @@ Recycler::Alloc(size_t size)
 void
 Recycler::AllocHT(size_t size)
 {
+  size_t htsz;
   for (uint32_t i = 0; i < size; i++) {
     Partition *p = new Partition(node_, -1);
     hashtable_t *ht = hashtable_init_noalloc(Params::kMaxHtTuples);
@@ -75,7 +76,11 @@ Recycler::AllocHT(size_t size)
 
     p->set_hashtable(ht);
     freehts_.push(p);
+
+    htsz = sizeof(entry_t) * ht->ntuples + sizeof(int) * ht->nbuckets;
   }
+
+  LOG(INFO) << kPreAllocHashtables << " hashtables of size " << htsz;
 }
 
 

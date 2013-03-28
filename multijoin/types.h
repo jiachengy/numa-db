@@ -20,4 +20,13 @@ enum OpType {
   OpUnitProbe,
 };
 
+struct relation_t
+{
+  tuple_t **tuples;
+  size_t *ntuples_on_node;
+  size_t ntuples;
+  uint32_t nnodes;
+};
+
+
 #endif // TYPES_H_

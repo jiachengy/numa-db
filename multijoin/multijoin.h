@@ -2,8 +2,8 @@
 #define MULTIJOIN_H_
 
 #include "env.h"
-#include "table.h"
+#include "types.h"
 
-void HashJoin(Environment *env, Table *relR, Table *relS);
+void HashJoin(Environment *env, relation_t *relR, relation_t *relS);
 
 #endif // MULTIJOIN_H_

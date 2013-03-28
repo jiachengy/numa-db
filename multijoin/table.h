@@ -56,7 +56,7 @@ class Partition {
   void Append(tuple_t tuple) { tuples_[size_++] = tuple; }
 
   tuple_t* tuples() { return tuples_; }
-  void set_data(void *data) { tuples_ = (tuple_t*)data; }
+  void set_tuples(tuple_t *tuples) { tuples_ = tuples; }
 
   size_t size() { return size_; }
   void set_size(size_t sz) { size_ = sz; }
@@ -128,6 +128,8 @@ class Table {
   void set_done() { done_ = true; }
   uint32_t done_count() { return done_count_; }
   uint32_t nparts() { return nparts_; }
+
+  static Table* BuildTableFromRelation(relation_t *rel);
 };
 
 

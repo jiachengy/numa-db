@@ -25,7 +25,6 @@ void* work_thread(void *param)
 #ifdef USE_PERF
 #if PER_CORE==1
   perf_register_thread();
-
   my->perf = perf_init();
   perf_start(my->perf);
 #endif
@@ -57,7 +56,23 @@ void* work_thread(void *param)
     task = queue->Fetch();
     if (task) {
       my->shared++;
+
+#ifdef USE_PERF
+#if PERF_PARTITION == 1
+      if (task->type() == OpPartition) {
+        perf_reset(my->perf);
+      }
       run_task(task, my);
+
+      if (task->type() == OpPartition) {
+        perf_accum(my->perf);
+      }
+#endif
+
+#else
+      run_task(task, my);
+#endif
+
       continue;
     }
 
@@ -128,9 +143,13 @@ void* work_thread(void *param)
 
 #ifdef USE_PERF
 #if PER_CORE==1
-  perf_stop(my->perf);
-  //  perf_destroy(my->perf);
-  perf_unregister_thread();
+   perf_stop(my->perf);
+#if PERF_ALL
+   perf_read(my->perf);
+#endif
+   //  perf_destroy(my->perf);
+   perf_unregister_thread();
+
 #endif
 #endif
 
@@ -139,7 +158,7 @@ void* work_thread(void *param)
 }
 
 // two way hash join
-void HashJoin(Environment *env, Table *relR, Table *relS)
+void HashJoin(Environment *env, relation_t *relR, relation_t *relS)
 {
   // init the task queues
   env->CreateJoinTasks(relR, relS);

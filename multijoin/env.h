@@ -12,6 +12,7 @@ typedef struct thread_t thread_t;
 #include "taskqueue.h"
 #include "table.h"
 #include "recycler.h"
+#include "builder.h"
 
 #include "perf.h"
 
@@ -106,9 +107,7 @@ class Environment
     tables_.push_back(table);
   }
 
-
-  Table* BuildTable(size_t sz);
-  void CreateJoinTasks(Table *rt, Table *st);
+  void CreateJoinTasks(relation_t *relR, relation_t *relS);
 };
 
 #endif // ENV_H_

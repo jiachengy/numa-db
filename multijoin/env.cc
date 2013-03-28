@@ -131,11 +131,13 @@ Environment::Init()
 }
 
 
-void Environment::CreateJoinTasks(Table *rt, Table *st)
+void Environment::CreateJoinTasks(relation_t *relR, relation_t *relS)
 {
+  Table *rt = Table::BuildTableFromRelation(relR);
+  Table *st = Table::BuildTableFromRelation(relS);
+
   rt->set_type(OpPartition);
   st->set_type(OpPartition);
-
   Table *rparted = new Table(OpBuild, nnodes_,
                              Params::kFanoutPass1,
                              nthreads_ * Params::kFanoutPass1);
@@ -202,17 +204,4 @@ void Environment::CreateJoinTasks(Table *rt, Table *st)
     tq->Unblock(partR->id());
     tq->Unblock(partS->id());
   }
-
-}
-
-
-Table*
-Environment::BuildTable(size_t sz)
-{
-  Table *table = new Table(nnodes_, 0);
-
-  TableBuilder tb(recyclers_);
-  tb.Build(table, sz, nthreads_);
-
-  return table;
 }

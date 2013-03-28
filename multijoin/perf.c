@@ -19,7 +19,7 @@ char const *DEFAULT_EVENTS[] = {
   //  "DTLB_LOAD_MISSES:MISS_CAUSES_A_WALK",
   "DTLB_STORE_MISSES:MISS_CAUSES_A_WALK",
   //  "DTLB_STORE_MISSES",
-  "PAPI_BR_MSP", /* conditional branch mispredicted */
+  //  "PAPI_BR_MSP", /* conditional branch mispredicted */
 };
 
 int NUM_EVENTS = 0;
@@ -52,7 +52,7 @@ perf_lib_init(const char *perfcfg, const char *perfout)
   if (perfout)
     PERF_OUT = mystrdup(perfout);
 
-  int max_counters = PAPI_get_cmp_opt(PAPI_MAX_HWCTRS, NULL, 0);
+  int max_counters = PAPI_num_counters();
   PERF_EVENT_NAMES = (char**)malloc(sizeof(char*) * max_counters);  
   assert(PERF_EVENT_NAMES != NULL);
   memset(PERF_EVENT_NAMES, 0x0, sizeof(char*) * max_counters);
@@ -116,9 +116,16 @@ perf_start(perf_t *perf)
 }
 
 void
+perf_reset(perf_t *perf)
+{
+  int retval = PAPI_reset(perf->EventSet);
+  assert(retval == PAPI_OK);
+}
+
+void
 perf_stop(perf_t *perf)
 {
-  int retval = PAPI_stop(perf->EventSet, perf->values);
+  int retval = PAPI_stop(perf->EventSet, NULL);
   assert(retval == PAPI_OK);
 }
 
@@ -136,6 +143,20 @@ perf_print(perf_t *perf)
 
   for (int i = 0; i < NUM_EVENTS; i++)
     fprintf(out, "%s: %lld\n", PERF_EVENT_NAMES[i], perf->values[i]);
+}
+
+void
+perf_accum(perf_t *perf)
+{
+  int retval = PAPI_accum(perf->EventSet, perf->values);
+  assert(retval == PAPI_OK);
+}
+
+void
+perf_read(perf_t *perf)
+{
+  int retval = PAPI_read(perf->EventSet, perf->values);
+  assert(retval == PAPI_OK);
 }
 
 
