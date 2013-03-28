@@ -1,11 +1,18 @@
+USE_PERF=1
+
 CC=g++
 CFLAGS=-pthread -Wall -g
+PERF_LIB=-lpapi
+DEFAULT_LIB=-lpthread -lglog -lnuma # -lperf
 #INC=-I../lib/intel-pcm-2.4
-LIBS=-lpthread -lglog -lpapi -lnuma # -lperf
 #LDPATH=-L../lib/intel-pcm-2.4/lib
 
-all : *.cc
-	$(CC) -o test $(CFLAGS) *.cc $(INC) $(LDPATH) $(LIBS)
+ifeq ($(USE_PERF), 1)
+	LIBS=$(DEFAULT_LIB) $(PERF_LIB)
+else
+	LIBS=$(DEFAULT_LIB)
+endif
 
-papi : testpapi.cc util.cc
-	$(CC) -o test $(CFLAGS) util.cc testpapi.cc $(INC) $(LDPATH) $(LIBS)
+all : *.cc
+	$(CC) -o test $(CFLAGS) *.c *.cc $(INC) $(LDPATH) $(LIBS)
+

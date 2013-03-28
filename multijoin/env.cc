@@ -3,6 +3,8 @@
 #include "hashjoin.h"
 #include "builder.h"
 
+#include "perf.h"
+
 using namespace std;
 
 Environment::Environment(int nthreads, size_t memory_limit)

@@ -6,6 +6,8 @@
 #include "taskqueue.h"
 #include "util.h"
 
+#include "perf.h"
+
 using namespace std;
 
 inline void run_task(Task *task, thread_t *my)
@@ -19,6 +21,15 @@ void* work_thread(void *param)
   thread_t *my = (thread_t*)param;
   int cpu = my->cpu;
   cpu_bind(cpu);
+
+#ifdef USE_PERF
+#if PER_CORE==1
+  perf_register_thread();
+
+  my->perf = perf_init();
+  perf_start(my->perf);
+#endif
+#endif
 
   Taskqueue *queue = my->node->queue;
 
@@ -115,6 +126,13 @@ void* work_thread(void *param)
     }
   }
 
+#ifdef USE_PERF
+#if PER_CORE==1
+  perf_stop(my->perf);
+  //  perf_destroy(my->perf);
+  perf_unregister_thread();
+#endif
+#endif
 
   //  LOG(INFO) << "Thread " << my->tid << " is existing.";
   return NULL;
@@ -128,9 +146,15 @@ void HashJoin(Environment *env, Table *relR, Table *relS)
 
   LOG(INFO) << "Task initialized.";
 
-  long t = micro_time();
 
-  
+#ifdef USE_PERF
+#if PER_SYSTEM==1
+  perf_t *perf = perf_init();
+  perf_start(perf);
+#endif  
+#endif
+
+  long t = micro_time();
 
   pthread_t threads[env->nthreads()];
   // start threads
@@ -144,6 +168,30 @@ void HashJoin(Environment *env, Table *relR, Table *relS)
     pthread_join(threads[i], NULL);
 
   t = (micro_time() - t) / 1000;
+
+
+#ifdef USE_PERF
+#if PER_SYSTEM==1
+  perf_stop(perf);
+  perf_print(perf);
+  perf_destroy(perf);
+#endif
+
+#if PER_CORE == 1
+  thread_t *args = env->threads();
+  for (int i = 0; i < env->nthreads(); i++) {
+    cout << "Thread " << i << ":" << endl;
+    perf_print(args[i].perf);
+    if (i != 0) 
+      perf_aggregate(args[0].perf, args[i].perf);
+  }
+
+  cout << "Aggregate on thread 0:" << endl;
+  perf_print(args[0].perf);
+#endif
+#endif
+
+
 
   thread_t *infos = env->threads();
   for (int i = 0; i < env->nthreads(); i++) {

@@ -13,6 +13,8 @@ typedef struct thread_t thread_t;
 #include "table.h"
 #include "recycler.h"
 
+#include "perf.h"
+
 struct node_t {
   int node_id;
   int nthreads;
@@ -41,6 +43,12 @@ struct thread_t {
   uint32_t local;
   uint32_t shared;
   uint32_t remote;
+
+#ifdef USE_PERF
+#if PER_CORE == 1
+  perf_t *perf;
+#endif
+#endif
 };
 
 using namespace std;
