@@ -8,14 +8,18 @@
 
 #if defined(USE_PERF)
 
-uint32_t nevents;
-
 char *PERF_CONFIG;
 char *PERF_OUT;
 
-char *DEFAULT_EVENTS[] = {
-  "PAPI_TOT_CYC",
-  "PAPI_FP_INS"
+char const *DEFAULT_EVENTS[] = {
+  "PAPI_TOT_CYC", /* total cpu cycles */
+  "PAPI_TOT_INS", /* total instructions completed */
+  "PAPI_L2_DCM",
+  //  "PAPI_TLB_DM", /* Data TLB misses */
+  //  "DTLB_LOAD_MISSES:MISS_CAUSES_A_WALK",
+  "DTLB_STORE_MISSES:MISS_CAUSES_A_WALK",
+  //  "DTLB_STORE_MISSES",
+  "PAPI_BR_MSP", /* conditional branch mispredicted */
 };
 
 int NUM_EVENTS = 0;
@@ -48,13 +52,36 @@ perf_lib_init(const char *perfcfg, const char *perfout)
   if (perfout)
     PERF_OUT = mystrdup(perfout);
 
+  int max_counters = PAPI_get_cmp_opt(PAPI_MAX_HWCTRS, NULL, 0);
+  PERF_EVENT_NAMES = (char**)malloc(sizeof(char*) * max_counters);  
+  assert(PERF_EVENT_NAMES != NULL);
+  memset(PERF_EVENT_NAMES, 0x0, sizeof(char*) * max_counters);
+
   if (PERF_CONFIG) {
-    // parse and read customized event id
+    char line[80];
+    FILE *config = fopen(PERF_CONFIG, "r");
+    assert(config != NULL);
+
+    while (fgets(line, 80, config) != NULL && NUM_EVENTS < max_counters) {
+      if (line[0]=='#')
+        continue;
+      PERF_EVENT_NAMES[NUM_EVENTS] = mystrdup(line);
+      NUM_EVENTS++;
+    }
+    if (!feof(config))
+      fprintf(stderr, "Too many counters added. Only take the first %d.\n", max_counters);
+
+    fclose(config);
   }
   else { /* if no config file is specified, add default events only */
     NUM_EVENTS = sizeof(DEFAULT_EVENTS) / sizeof(char*);
-    PERF_EVENT_NAMES = (char**)malloc(sizeof(char*) * NUM_EVENTS);
-    memcpy(PERF_EVENT_NAMES, DEFAULT_EVENTS, sizeof(DEFAULT_EVENTS));
+    if (NUM_EVENTS > max_counters) {
+      NUM_EVENTS = max_counters;
+      fprintf(stderr, "Too many counters added. Only take the first %d.\n", max_counters);
+    }
+    
+    for (int i = 0; i < NUM_EVENTS; i++)
+      PERF_EVENT_NAMES[i] = mystrdup(DEFAULT_EVENTS[i]);
   }
 }
 
@@ -62,8 +89,10 @@ perf_lib_init(const char *perfcfg, const char *perfout)
 void
 perf_lib_cleanup()
 {
+  for (int i = 0; i < NUM_EVENTS; i++)
+    free(PERF_EVENT_NAMES[i]);
   free(PERF_EVENT_NAMES);
-  PAPI_shutdown();
+  PAPI_shutdown();  
 }
 
 void
@@ -96,8 +125,17 @@ perf_stop(perf_t *perf)
 void
 perf_print(perf_t *perf)
 {
+  FILE *out;
+
+  if (PERF_OUT) {
+    out = fopen(PERF_OUT, "w+");
+    assert(out != NULL);
+  }
+  else
+    out = stdout;
+
   for (int i = 0; i < NUM_EVENTS; i++)
-    fprintf(stdout, "%s: %lld\n", PERF_EVENT_NAMES[i], perf->values[i]);
+    fprintf(out, "%s: %lld\n", PERF_EVENT_NAMES[i], perf->values[i]);
 }
 
 
@@ -134,14 +172,21 @@ perf_init()
   /* Add events by names */
   for (int i = 0; i < NUM_EVENTS; i++) {
     int EventCode;
-    retval = PAPI_event_name_to_code(PERF_EVENT_NAMES[i], &EventCode);
-    assert(retval == PAPI_OK);
+    if ((retval = PAPI_event_name_to_code(PERF_EVENT_NAMES[i], &EventCode)) != PAPI_OK) {
+      fprintf(stderr, "Event name %s not found, skipped.\n", PERF_EVENT_NAMES[i]);
+      continue;
+    }
 
-    retval = PAPI_query_event(EventCode);
-    assert(retval == PAPI_OK);
 
-    retval = PAPI_add_event(EventSet, EventCode);
-    assert(retval == PAPI_OK);
+    if ((retval = PAPI_query_event(EventCode)) != PAPI_OK) {
+      fprintf(stderr, "Event %s not supported on this hardware, skipped.\n", PERF_EVENT_NAMES[i]);
+      continue;
+    }
+
+    if ((retval = PAPI_add_event(EventSet, EventCode)) != PAPI_OK) {
+      assert(retval == PAPI_ECNFLCT);
+      fprintf(stderr, "%s conflicts, skipped.\n", PERF_EVENT_NAMES[i]);
+    }
   }
 
   perf_t *perf = (perf_t*)malloc(sizeof(perf_t));

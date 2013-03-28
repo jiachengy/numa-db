@@ -8,19 +8,6 @@
 #define USE_PERF
 #endif
 
-/* only one of PER_CORE and PER_SYSTEM can be set */
-#ifndef PER_CORE
-#define PER_CORE 1
-#endif
-
-#ifndef PER_SOCKET
-#define PER_SOCKET 0
-#endif
-
-#ifndef PER_SYSTEM
-#define PER_SYSTEM 1
-#endif
-
 typedef long long int counter_t;
 
 struct perf_t {
