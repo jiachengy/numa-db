@@ -1,10 +1,11 @@
 CC=g++
 CFLAGS=-pthread -Wall -g
-LIBS=-lpthread -lnuma -lglog
+#INC=-I../lib/intel-pcm-2.4
+LIBS=-lpthread -lglog -lpapi -lnuma # -lperf
+#LDPATH=-L../lib/intel-pcm-2.4/lib
 
 all : *.cc
-	$(CC) -o test $(CFLAGS) *.cc $(LIBS)
+	$(CC) -o test $(CFLAGS) *.cc $(INC) $(LDPATH) $(LIBS)
 
-
-table : util.cc builder.cc recycler.cc main.cc table.cc
-	$(CC) -o test $(CFLAGS) recycler.cc util.cc builder.cc main.cc table.cc $(LIBS)
+papi : testpapi.cc util.cc
+	$(CC) -o test $(CFLAGS) util.cc testpapi.cc $(INC) $(LDPATH) $(LIBS)

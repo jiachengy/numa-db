@@ -1,3 +1,12 @@
+Performance measurement
+- Cycles
+- Instructions
+- L2 misses
+- L3 misses
+- TLB load misses
+- TLB store misses
+per thread/per node/total
+
 Two pass partitioning
 Multi-join
 random generator

@@ -130,6 +130,8 @@ void HashJoin(Environment *env, Table *relR, Table *relS)
 
   long t = micro_time();
 
+  
+
   pthread_t threads[env->nthreads()];
   // start threads
   for (int i = 0; i < env->nthreads(); i++) {

@@ -3,10 +3,14 @@
 # written by Roman Dementiev
 #
 
-all: pcm-power.x pcm.x pcm-sensor.x pcm-msr.x pcm-memory.x
+# Now only builds the shared library by default
+all: lib/libperf.so
+#all: pcm-power.x pcm.x pcm-sensor.x pcm-msr.x pcm-memory.x
 
 CC=g++ -Wall
-OPT= -g -O3 
+OPT= -g -O3 -fPIC -pthread
+# add fPIC to compile
+#OPT= -g -O3 
 
 # uncomment if you want to rely on Linux perf support (user needs CAP_SYS_ADMIN privileges)
 ifneq ($(wildcard /usr/include/linux/perf_event.h),)
@@ -79,5 +83,27 @@ pcm-sensor.x: msr.o cpucounters.o pcm-sensor.o pci.o client_bw.o
 nice:
 	uncrustify --replace -c ~/uncrustify.cfg *.cpp *.h WinMSRDriver/Win7/*.h WinMSRDriver/Win7/*.c WinMSRDriver/WinXP/*.h WinMSRDriver/WinXP/*.c  PCM_Win/*.h PCM_Win/*.cpp  
 
+
+# clean:
+# 	rm -rf *.x *.o *~
+
+# Added to create libraries
+libperf: cpucounters.h msr.h types.h msr.o cpucounters.o client_bw.o pci.o
+	ar rcs libperf.a  msr.o cpucounters.o client_bw.o pci.o
+
+lib/libperf.so: msr.o cpucounters.o client_bw.o pci.o
+	mkdir -p lib
+	$(CC) $(OPT) -shared  -Wl,-soname,libperf.so -o lib/libperf.so msr.o cpucounters.o client_bw.o pci.o
+
+mytest: lib/libperf.so mytest.cpp
+	$(CC) $(OPT) -o mytest mytest.cpp -I. -L./lib -lperf
+
+distdir:
+
+distclean: clean
+
 clean:
-	rm -rf *.x *.o *~
+	rm -rf *.x *.o *~ lib/ *.a mytest
+
+
+
