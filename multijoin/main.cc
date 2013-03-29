@@ -35,29 +35,30 @@ int main(int argc, char *argv[])
     exit(1);
   }
       
-  //  int nthreads = atoi(argv[1]);
-  size_t ntuples = 128 * 1024 * 1024; // 128M
-  //  size_t mem_limit = 1024L  * 1024L * 1024L * 16; // 4GB
+  int nthreads = atoi(argv[1]);
+  size_t rsize = 16 * 1024 * 1024; // 128M
+  size_t ssize = 256 * 1024 * 1024; // 128M
+
+  size_t mem_limit = 1024L  * 1024L * 1024L * 8; // 4GB
   
-  // Params::kNtuples = ntuples;
-  // Params::kMaxHtTuples = ntuples / Params::kFanoutPass1 * 2;
-  // LOG(INFO) << "max ht tuples: " << Params::kMaxHtTuples;
+  Params::kNtuples = rsize;
+  Params::kMaxHtTuples = rsize / Params::kFanoutPass1 * 2;
+  LOG(INFO) << "max ht tuples: " << Params::kMaxHtTuples;
 
-  // Environment *env = new Environment(nthreads, mem_limit);
-  // LOG(INFO) << "Env set up.";
+  Environment *env = new Environment(nthreads, mem_limit);
+  LOG(INFO) << "Env set up.";
 
-  relation_t *relR = parallel_build_relation_pk(ntuples, 4);
-  //  relation_t *relS = parallel_build_relation_pk(ntuples, 4);
+  relation_t *relR = parallel_build_relation_pk(rsize, 32);
+  relation_t *relS = parallel_build_relation_fk(ssize, rsize, 32);
 
-  // LOG(INFO) << "Building tables done.";
+  LOG(INFO) << "Building tables done.";
 
-  // HashJoin(env, relR, relS);
+  HashJoin(env, relR, relS);
 
-  // LOG(INFO) << "Hash join done.";
+  LOG(INFO) << "Hash join done.";
 
-  // delete env;
-  // LOG(INFO) << "Env deleted.";
-
+  delete env;
+  LOG(INFO) << "Env deleted.";
 
 #ifdef USE_PERF
   perf_lib_cleanup();

@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <assert.h>
 #include <pthread.h>
 
@@ -5,6 +6,8 @@
 #include "util.h"
 
 #define RAND_RANGE(N, STATE) (rand_next(STATE) % N)
+
+#define LOG(MSG, ...) { fprintf(stderr, ""MSG, ## __VA_ARGS__); }
 
 void
 knuth_shuffle(tuple_t *tuples, size_t ntuples, uint32_t seed)
@@ -65,6 +68,69 @@ relation_destroy(relation_t *rel)
   free(rel);
 }
 
+void
+random_gen(tuple_t *tuple, size_t ntuples, const int32_t maxid)
+{
+  uint32_t seed = rand();
+  rand_state *state = rand_init(seed);
+
+  for (uint32_t i = 0; i < ntuples; i++)
+    tuple[i].key = RAND_RANGE(maxid, state);
+
+  free(state);
+}
+
+void
+random_unique_gen(tuple_t *tuple, size_t ntuples)
+{
+
+  for (uint32_t i = 0; i < ntuples; i++)
+    tuple[i].key = i + 1;
+
+  uint32_t seed = rand();
+  knuth_shuffle(tuple, ntuples, seed);
+}
+
+
+void*
+build_fk_thread(void *params)
+{
+  build_arg_t *arg = (build_arg_t*)params;
+  int cpu = arg->cpu;
+  int node = arg->node;
+  relation_t *rel = arg->rel;
+
+  cpu_bind(cpu);
+
+  if (cpu == cpu_of_node(node, 0)) {
+    size_t ntuples_on_node = arg->rel->ntuples_on_node[node];
+    tuple_t *tuples = (tuple_t*)alloc(sizeof(tuple_t) * ntuples_on_node);
+    memset(tuples, 0x0, sizeof(tuple_t) * ntuples_on_node);
+    rel->tuples[node] = tuples;
+  }
+
+  pthread_barrier_wait(arg->barrier_alloc);
+
+  tuple_t *tuples = rel->tuples[node] + arg->offset;
+  assert(tuples != NULL);
+
+  random_gen(tuples, arg->ntuples, arg->maxid);
+
+  // int iters = arg->ntuples / arg->maxid;
+
+  // for (int iter = 0; iter < iters; ++iter) {
+  //   random_unique_gen(tuples, arg->maxid);
+  //   tuples += arg->maxid * iter;
+  // }
+  
+  // int remainder = arg->ntuples % arg->maxid;
+  // if (remainder > 0) {
+  //   random_unique_gen(tuples, remainder);
+  // }
+
+  return NULL;
+}
+
 
 void*
 build_pk_thread(void *params)
@@ -85,7 +151,6 @@ build_pk_thread(void *params)
 
   pthread_barrier_wait(arg->barrier_alloc);
 
-  // every one starts to build from its offset
   tuple_t *tuples = rel->tuples[node] + arg->offset;
   assert(tuples != NULL);
 
@@ -101,6 +166,64 @@ build_pk_thread(void *params)
   knuth_shuffle(tuples, arg->ntuples, state);
 
   return NULL;
+}
+
+relation_t *
+parallel_build_relation_fk(size_t ntuples, const int32_t maxid, uint32_t nthreads)
+{
+  relation_t *rel = relation_init();
+  uint32_t nnodes = num_numa_nodes();
+
+  assert(nthreads >= nnodes);
+
+  rel->ntuples = ntuples;
+  rel->nnodes = nnodes;
+
+  build_arg_t args[nthreads];
+  pthread_t threads[nthreads];
+  pthread_barrier_t barriers[nnodes];
+
+  size_t ntuples_per_node = ntuples / nnodes;
+  size_t ntuples_on_lastnode = ntuples - ntuples_per_node * (nnodes - 1);
+  size_t nthreads_per_node = nthreads / nnodes;
+  size_t nthreads_on_lastnode = nthreads - nthreads_per_node * (nnodes - 1);
+
+  int tid = 0;
+  for (uint32_t node = 0; node < nnodes; ++node) {
+    rel->ntuples_on_node[node] = (node == nnodes-1) ? ntuples_on_lastnode : ntuples_per_node;
+    size_t nthreads_on_node = (node == nnodes - 1) ? nthreads_per_node : nthreads_on_lastnode;
+    size_t ntuples_per_thread = rel->ntuples_on_node[node] / nthreads_on_node;
+    size_t ntuples_lastthread = rel->ntuples_on_node[node] - ntuples_per_thread * (nthreads_on_node - 1);
+
+    pthread_barrier_init(&barriers[node], NULL, nthreads_on_node);
+
+    int offset = 0;
+    for (uint32_t t = 0; t < nthreads_on_node; t++, tid++) {
+      args[tid].tid = tid;
+      args[tid].cpu = cpu_of_node(node, t);
+      args[tid].node = node;
+      args[tid].offset = offset;
+      args[tid].maxid = maxid;
+      args[tid].ntuples = (t == nthreads_on_node - 1) ? ntuples_lastthread : ntuples_per_thread;
+      
+      offset += (args[tid].ntuples);
+
+      args[tid].barrier_alloc = &barriers[node];
+      args[tid].rel = rel;
+    }
+  }
+
+  for (uint32_t i = 0; i < nthreads; i++)
+    pthread_create(&threads[i], NULL, build_fk_thread, (void*)&args[i]);
+
+  for (uint32_t i = 0; i < nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
+
+  for (uint32_t node = 0; node < nnodes; ++node)
+    pthread_barrier_destroy(&barriers[node]);
+
+  return rel;
 }
 
 
@@ -133,6 +256,8 @@ parallel_build_relation_pk(size_t ntuples, uint32_t nthreads)
     size_t ntuples_per_thread = rel->ntuples_on_node[node] / nthreads_on_node;
     size_t ntuples_lastthread = rel->ntuples_on_node[node] - ntuples_per_thread * (nthreads_on_node - 1);
 
+    pthread_barrier_init(&barriers[node], NULL, nthreads_on_node);
+
     int offset = 0;
     for (uint32_t t = 0; t < nthreads_on_node; t++, tid++) {
       args[tid].tid = tid;
@@ -148,19 +273,17 @@ parallel_build_relation_pk(size_t ntuples, uint32_t nthreads)
       args[tid].barrier_alloc = &barriers[node];
       args[tid].rel = rel;
     }
-
-    pthread_barrier_init(&barriers[node], NULL, nthreads_on_node);
   }
 
   for (uint32_t i = 0; i < nthreads; i++)
     pthread_create(&threads[i], NULL, build_pk_thread, (void*)&args[i]);
 
-  for (uint32_t i = 0; i < nthreads; i++)
-    pthread_join(threads[i], NULL);
-
   for (uint32_t i = 0; i < nthreads; i++) {
-    pthread_barrier_destroy(args[i].barrier_alloc);
+    pthread_join(threads[i], NULL);
   }
+
+  for (uint32_t node = 0; node < nnodes; ++node)
+    pthread_barrier_destroy(&barriers[node]);
 
   uint32_t seed = rand();
   knuth_shuffle_rel(rel, seed);

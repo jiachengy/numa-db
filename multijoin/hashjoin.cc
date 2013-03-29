@@ -191,8 +191,6 @@ void BuildTask::Run(thread_t *my)
       next[i].next = bucket[idx];
       next[i].tuple = *tuple;
 
-      assert(tuple->payload == tuple->key - 1);
-      
       bucket[idx] = ++i; // pos starts from 1 instead of 0
       tuple++;
     }
@@ -218,7 +216,6 @@ void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
   for(uint32_t i = 0; i < block.size; i++, tuple++){
     uint32_t idx = HASH_BIT_MODULO(tuple->key, MASK, Params::kNumRadixBits);
     for(int hit = bucket[idx]; hit > 0; hit = next[hit-1].next){
-      assert(tuple->payload == tuple->key + 1);
 
       if(tuple->key == next[hit-1].tuple.key){
         // V1: check output for every match
