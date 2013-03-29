@@ -51,7 +51,6 @@ class Partition {
   void Alloc();
   void Dealloc();
 
-  block_t NextBlock();
   void Reset();
   void Append(tuple_t tuple) { tuples_[size_++] = tuple; }
 
@@ -86,7 +85,7 @@ class Table {
   std::vector<std::list<Partition*> > pnodes_;
   uint32_t nnodes_;
 
-  std::vector<std::list<Partition*> > pkeys_;
+  vector<list<Partition*> > pkeys_;
   uint32_t nkeys_;
 	
   bool ready_;
@@ -103,6 +102,8 @@ class Table {
   pthread_mutex_t mutex_;
 
  public:
+  static void ResetId() { __autoid__ = 0; }
+
   // constructor for creating base table
   Table(uint32_t nnodes, uint32_t nkeys);
   // construtor for intermediate tables
@@ -118,6 +119,8 @@ class Table {
   Partition* GetBuffer(int buffer_id) {return buffers_[buffer_id];}
   void SetBuffer(int buffer_id, Partition *buffer) {buffers_[buffer_id] = buffer;}
 
+  uint32_t nnodes() { return nnodes_; }
+  uint32_t nkeys() { return nkeys_; }
   int nbuffers() { return nbuffers_; }
   OpType type() { return type_; }
   void set_type(OpType type) { type_ = type;}

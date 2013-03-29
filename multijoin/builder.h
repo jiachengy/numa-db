@@ -21,10 +21,10 @@ struct build_arg_t
   relation_t *rel;
 };
 
-relation_t* relation_init();
+relation_t* relation_init(uint32_t nnodes);
 void relation_destroy(relation_t *rel);
 
-relation_t* parallel_build_relation_pk(size_t ntuples, uint32_t nthreads);
-relation_t *parallel_build_relation_fk(size_t ntuples, const int32_t maxid, uint32_t nthreads);
+relation_t* parallel_build_relation_pk(size_t ntuples, uint32_t nnodes, uint32_t nthreads);
+relation_t *parallel_build_relation_fk(const size_t ntuples, const int32_t maxid, const uint32_t nnodes, const uint32_t nthreads);
 
 #endif // BUILDER_H_

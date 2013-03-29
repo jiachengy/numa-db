@@ -18,11 +18,11 @@ typedef struct thread_t thread_t;
 
 struct node_t {
   int node_id;
-  int nthreads;
+  uint32_t nthreads;
   thread_t **groups;
 
-  int next_node;
-  int next_cpu;
+  uint32_t next_node;
+  uint32_t next_cpu;
 
   Taskqueue *queue;
   pthread_mutex_t lock;
@@ -86,7 +86,7 @@ class Environment
   void Init();
 
  public:
-  Environment(int nthreads, size_t memory_limit);
+  Environment(uint32_t nnodes, uint32_t nthreads, size_t memory_limit);
   ~Environment();
 
   node_t *nodes() { return nodes_; }
@@ -107,6 +107,9 @@ class Environment
     tables_.push_back(table);
   }
 
+  void Reset();
+
+  void RadixPartition(relation_t *rel);
   void CreateJoinTasks(relation_t *relR, relation_t *relS);
 };
 

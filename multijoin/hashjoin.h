@@ -20,7 +20,6 @@ class PartitionTask : public Task
   int offset_; // cluster bits
   int nbits_; // radix bits per pass
 
-  void ProcessBlock(thread_t *my, block_t block, uint32_t mask, uint32_t fanout, uint32_t hist[], tuple_t *dst[]);
   void Finish(thread_t *my);
   
  public:

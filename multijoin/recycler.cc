@@ -12,17 +12,11 @@ Recycler::Recycler(int node, size_t capacity)
   
   data_ = (char*)alloc(capacity_);
   assert(data_ != NULL);
-  memset(data_, 0, capacity_);
+  memset(data_, 0x0, capacity_);
   cur_ = 0;
 
-  LOG(INFO) << "ht: "<< Recycler::kPreAllocHashtables;
-
-  AllocHT(Recycler::kPreAllocHashtables);
-
-
-  LOG(INFO) << "ht: "<< Recycler::kPreAllocHashtables;
-
-  size_t nparts = (capacity_ - cur_) / (Params::kPartitionSize * sizeof(tuple_t));
+  //  AllocHT(Recycler::kPreAllocHashtables);
+  size_t nparts = (capacity_ - cur_) / (Params::kPartitionSize);
   LOG(INFO) << "nparts: "<< nparts;
 
   Alloc(nparts);
@@ -52,7 +46,7 @@ Recycler::Alloc(size_t size)
   for (uint32_t i = 0; i < size; i++) {
     Partition *p = new Partition(node_, -1);
     p->set_tuples((tuple_t*)(data_ + cur_));
-    cur_ += Params::kPartitionSize * sizeof(tuple_t);
+    cur_ += Params::kPartitionSize;
 
     assert(cur_ <= capacity_);
 

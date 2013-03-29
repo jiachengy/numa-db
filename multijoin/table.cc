@@ -36,18 +36,6 @@ void Partition::Dealloc()
   }
 }
 
-block_t Partition::NextBlock() {
-  size_t sz = Params::kBlockSize;
-  uint32_t pos = curpos_;
-  if (curpos_ + sz >= size_) {
-    sz = size_ - curpos_;
-    curpos_ = -1;
-    set_done();
-  }
-  else
-    curpos_ += Params::kBlockSize;
-  return block_t(tuples_ + pos, sz);
-}
 
 void Partition::Reset() { 	// used by the recycler
   // node cannot be changed
@@ -134,6 +122,7 @@ void Table::Commit(int size)
   pthread_mutex_lock(&mutex_);
 
   done_count_ += size;
+
   if (done_count_ == nparts_)
     set_done();
 

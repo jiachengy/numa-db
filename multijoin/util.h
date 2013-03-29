@@ -19,8 +19,7 @@
 
 
 uint32_t cpus();
-int num_numa_nodes();
-
+uint32_t num_numa_nodes();
 
 void cpu_bind(int cpu);
 void node_bind(int node);

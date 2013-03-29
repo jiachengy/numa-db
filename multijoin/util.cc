@@ -11,6 +11,7 @@
 #include <math.h>
 
 #include "util.h"
+#include "params.h"
 
 #define INGATAN
 #ifdef INGATAN
@@ -43,11 +44,10 @@ uint32_t cpus(void)
   return cpu_num;
 }
 
-int num_numa_nodes()
+uint32_t num_numa_nodes()
 {
   return numa_max_node() + 1;
 }
-
 
 void cpu_membind(int cpu_id)
 {
@@ -107,8 +107,11 @@ int cpu_of_node(int node, int idx)
 
 void* alloc(size_t sz)
 {
-  return malloc(sz);
-  //  return numa_alloc_local(sz);
+  void* ptr = NULL;
+  int retval = posix_memalign(&ptr, CACHE_LINE_SIZE, sz);
+  assert(retval == 0);
+  return ptr;
+//  return numa_alloc_local(sz);
 }
 
 // be careful when used in global thread

@@ -13,11 +13,73 @@
 
 #include "perf.h" // papi
 
-size_t Params::kNtuples = 0;
 size_t Params::kMaxHtTuples = 0;
 
-
 using namespace std;
+
+#define HASH_BIT_MODULO(K, MASK, NBITS) (((K) & MASK) >> NBITS)
+
+void
+radix_cluster(tuple_t *  outRel,
+              tuple_t * inRel,
+              size_t ntuples,
+              int R,
+              int D)
+{
+
+
+
+  long t = micro_time();
+  perf_t *perf = perf_init();
+  perf_start(perf);
+
+  uint32_t i;
+  uint32_t M = ((1 << D) - 1) << R;
+  uint32_t offset;
+  uint32_t fanOut = 1 << D;
+
+  /* the following are fixed size when D is same for all the passes,
+     and can be re-used from call to call. Allocating in this function
+     just in case D differs from call to call. */
+  uint32_t dst[fanOut];
+  int32_t hist[fanOut];
+
+
+  memset(hist, 0x0, sizeof(int32_t) * fanOut);
+
+  /* count tuples per cluster */
+  for( i=0; i < ntuples; i++ ){
+    uint32_t idx = HASH_BIT_MODULO(inRel[i].key, M, R);
+    hist[idx]++;
+  }
+  offset = 0;
+  /* determine the start and end of each cluster depending on the counts. */
+  for ( i=0; i < fanOut; i++ ) {
+    /* dst[i]      = outRel->tuples + offset; */
+    /* determine the beginning of each partitioning by adding some
+       padding to avoid L1 conflict misses during scatter. */
+    dst[i] = offset;
+    //    dst[i] = offset + i * SMALL_PADDING_TUPLES;
+    offset += hist[i];
+  }
+
+  /* copy tuples to their corresponding clusters at appropriate offsets */
+  for( i=0; i < ntuples; i++ ){
+    uint32_t idx   = HASH_BIT_MODULO(inRel[i].key, M, R);
+    outRel[ dst[idx] ] = inRel[i];
+    ++dst[idx];
+  }
+
+  t = micro_time() - t;
+
+  perf_stop(perf);
+  perf_read(perf);
+  perf_print(perf);
+  perf_destroy(perf);
+
+  LOG(INFO) << "Eclapsed time: " << (t / 1000);
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -30,35 +92,35 @@ int main(int argc, char *argv[])
   perf_lib_init(NULL, NULL);
 #endif
 
-  if (argc != 2) {
-    cout << "Usage: ./test <nthreads>" << endl;
-    exit(1);
-  }
       
-  int nthreads = atoi(argv[1]);
-  size_t rsize = 16 * 1024 * 1024; // 128M
-  size_t ssize = 256 * 1024 * 1024; // 128M
+  size_t rsize = 128 * 1024 * 1024; // 128M
+  //  size_t ssize = 16 * 1024 * 1024; // 128M
 
-  size_t mem_limit = 1024L  * 1024L * 1024L * 8; // 4GB
+
+  relation_t *relR = parallel_build_relation_fk(rsize, rsize, 1, 1);
+  //  relation_t *relS = parallel_build_relation_fk(ssize, rsize, 4, 8);
+  LOG(INFO) << "Building tables done.";
+  LOG(INFO) << "==============================";
+
+  cpu_bind(0);
+  tuple_t *out = (tuple_t*)alloc(sizeof(tuple_t) * rsize);
+  memset(out, 0x0, sizeof(tuple_t) * rsize);
+  radix_cluster(out, relR->tuples[0], rsize, Params::kOffsetPass1, Params::kNumBitsPass1);
+
+
+
+  size_t mem_limit = 1024L  * 1024L * 1024L * 4; // 4GB
   
-  Params::kNtuples = rsize;
-  Params::kMaxHtTuples = rsize / Params::kFanoutPass1 * 2;
+  Params::kMaxHtTuples = 0; // rsize / Params::kFanoutPass1 * 2;
   LOG(INFO) << "max ht tuples: " << Params::kMaxHtTuples;
 
-  Environment *env = new Environment(nthreads, mem_limit);
+  Environment *env = new Environment(1, 1, mem_limit);
   LOG(INFO) << "Env set up.";
 
-  relation_t *relR = parallel_build_relation_pk(rsize, 32);
-  relation_t *relS = parallel_build_relation_fk(ssize, rsize, 32);
+  //  HashJoin(env, relR, relS);
+   RadixPartition(env, relR);
 
-  LOG(INFO) << "Building tables done.";
-
-  HashJoin(env, relR, relS);
-
-  LOG(INFO) << "Hash join done.";
-
-  delete env;
-  LOG(INFO) << "Env deleted.";
+  // delete env;
 
 #ifdef USE_PERF
   perf_lib_cleanup();

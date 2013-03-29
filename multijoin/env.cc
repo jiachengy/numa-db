@@ -7,18 +7,23 @@
 
 using namespace std;
 
-Environment::Environment(int nthreads, size_t memory_limit)
-  : nthreads_(nthreads), nnodes_(num_numa_nodes()),
+
+
+Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t memory_limit)
+  : nthreads_(nthreads), nnodes_(nnodes),
     memlimit_(memory_limit), done_(false)
 {
   nodes_ = (node_t*)malloc(sizeof(node_t) * nnodes_);
   threads_ = (thread_t*)malloc(sizeof(thread_t) * nthreads);
   recyclers_ = (Recycler**)malloc(sizeof(Recycler*) * nnodes_);
 
+  uint32_t nthreads_per_node = nthreads / nnodes_;
+  uint32_t nthreads_lastnode = nthreads - nthreads_per_node * (nnodes_ - 1);
+
   for (uint32_t node = 0; node < nnodes_; node++) {
     node_t *n = &nodes_[node];
     n->node_id = node;
-    n->nthreads = nthreads / nnodes_; // this is not accurate, unless we assign the threads round robin
+    n->nthreads = (node == nnodes_ - 1) ? nthreads_lastnode : nthreads_per_node;
     n->groups = (thread_t**)malloc(sizeof(thread_t*) * n->nthreads);
     n->queue = new Taskqueue();
     n->next_node = (node + 1) % nnodes_;
@@ -29,7 +34,31 @@ Environment::Environment(int nthreads, size_t memory_limit)
 #ifdef PRE_ALLOC
   Init();
 #endif
+  
+  int tid = 0;
+  for (uint32_t nid = 0; nid < nnodes_; ++nid) {
+    node_t *node = &nodes_[nid];
+    for (uint32_t t = 0; t < nodes_[nid].nthreads; t++, tid++) {
+      thread_t *thread = &threads_[tid];
+      int cpu = cpu_of_node(nid, t); // round robin
+      thread->tid = tid;
+      thread->cpu = cpu;
+      thread->node_id = nid;
+      thread->node = node;
+      thread->localtasks = NULL;
+      thread->stolentasks = NULL;
+      thread->env = this;
 
+      thread->local = 0;
+      thread->shared = 0;
+      thread->remote = 0;
+      thread->recycler = recyclers_[nid];
+
+      node->groups[t] = thread;
+    }
+  }
+
+  /*
   int node_idx[nnodes_];
   memset(node_idx, 0, sizeof(int) * nnodes_);
 
@@ -54,6 +83,7 @@ Environment::Environment(int nthreads, size_t memory_limit)
 
     nodes_[node].groups[node_idx[node]++] = t;
   }
+  */
 }
 
 Environment::~Environment()
@@ -131,7 +161,11 @@ Environment::Init()
 }
 
 
-void Environment::CreateJoinTasks(relation_t *relR, relation_t *relS)
+
+
+
+void
+Environment::CreateJoinTasks(relation_t *relR, relation_t *relS)
 {
   Table *rt = Table::BuildTableFromRelation(relR);
   Table *st = Table::BuildTableFromRelation(relS);
@@ -203,5 +237,64 @@ void Environment::CreateJoinTasks(relation_t *relR, relation_t *relS)
 
     tq->Unblock(partR->id());
     tq->Unblock(partS->id());
+  }
+}
+
+
+void
+Environment::Reset()
+{
+  Table::ResetId();
+  
+  tables_.clear();
+  tasks_.clear();
+
+  for (uint32_t node = 0; node < nnodes_; node++) {
+    nodes_[node].queue = new Taskqueue();
+  }
+
+  for (uint32_t t = 0; t < nthreads_; t++) {
+    threads_[t].localtasks = NULL;
+    threads_[t].stolentasks = NULL;
+    threads_[t].local = 0;
+    threads_[t].shared = 0;
+    threads_[t].remote = 0;
+  }
+
+  done_ = false;
+}
+
+
+void
+Environment::RadixPartition(relation_t *rel)
+{
+  Table *rt = Table::BuildTableFromRelation(rel);
+  rt->set_type(OpPartition);
+
+  Table *pass1tb = new Table(OpNone, nnodes_,
+                             Params::kFanoutPass1,
+                             nthreads_ * Params::kFanoutPass1);
+
+  // Table Catelog
+  AddTable(rt);
+  AddTable(pass1tb);
+
+
+  for (uint32_t node = 0; node < nnodes_; node++) {
+    Tasklist *pass1tasks = new Tasklist(rt, pass1tb, ShareNode);
+    tasks_.push_back(pass1tasks);
+
+    Taskqueue *tq = nodes_[node].queue;
+    tq->AddList(pass1tasks);
+    tq->Unblock(pass1tasks->id());
+
+    // create partition task from table R
+    list<Partition*>& pr = rt->GetPartitionsByNode(node);
+    for (list<Partition*>::iterator it = pr.begin(); 
+         it != pr.end(); it++) {
+      pass1tasks->AddTask(new PartitionTask(OpPartition, *it, rt, pass1tb, Params::kOffsetPass1, Params::kNumBitsPass1));
+    }
+
+    LOG(INFO) << pr.size() << " partition tasks are created in list " << pass1tasks->id();
   }
 }

@@ -25,7 +25,7 @@ knuth_shuffle(tuple_t *tuples, size_t ntuples, uint32_t seed)
 void
 knuth_shuffle_rel(relation_t *rel, uint32_t seed)
 {
-  size_t ntuples_per_node = rel->ntuples / num_numa_nodes();
+  size_t ntuples_per_node = rel->ntuples / rel->nnodes;
 
   rand_state *state = rand_init(seed);
   for (int i = rel->ntuples - 1; i > 0; i--) {
@@ -46,20 +46,21 @@ knuth_shuffle_rel(relation_t *rel, uint32_t seed)
 
 
 relation_t*
-relation_init()
+relation_init(uint32_t nnodes)
 {
   relation_t *rel = (relation_t*)malloc(sizeof(relation_t));
-  rel->tuples = (tuple_t**)malloc(sizeof(tuple_t*) * num_numa_nodes());
-  rel->ntuples_on_node = (size_t*)malloc(sizeof(size_t*) * num_numa_nodes());
-  memset(rel->tuples, 0x0, sizeof(tuple_t*) * num_numa_nodes());
-  memset(rel->ntuples_on_node, 0x0, sizeof(size_t*) * num_numa_nodes());
+  rel->nnodes = nnodes;
+  rel->tuples = (tuple_t**)malloc(sizeof(tuple_t*) * nnodes);
+  rel->ntuples_on_node = (size_t*)malloc(sizeof(size_t*) * nnodes);
+  memset(rel->tuples, 0x0, sizeof(tuple_t*) * nnodes);
+  memset(rel->ntuples_on_node, 0x0, sizeof(size_t*) * nnodes);
   return rel;
 }
 
 void
 relation_destroy(relation_t *rel)
 {
-  for (int node = 0; node < num_numa_nodes(); ++node) {
+  for (uint32_t node = 0; node < rel->nnodes; ++node) {
     if (rel->tuples[node] != NULL)
       dealloc(rel->tuples[node], sizeof(tuple_t) * rel->ntuples_on_node[node]);
   }
@@ -116,17 +117,19 @@ build_fk_thread(void *params)
 
   random_gen(tuples, arg->ntuples, arg->maxid);
 
-  // int iters = arg->ntuples / arg->maxid;
+  /*
+  int iters = arg->ntuples / arg->maxid;
 
-  // for (int iter = 0; iter < iters; ++iter) {
-  //   random_unique_gen(tuples, arg->maxid);
-  //   tuples += arg->maxid * iter;
-  // }
+  for (int iter = 0; iter < iters; ++iter) {
+    random_unique_gen(tuples, arg->maxid);
+    tuples += arg->maxid * iter;
+  }
   
-  // int remainder = arg->ntuples % arg->maxid;
-  // if (remainder > 0) {
-  //   random_unique_gen(tuples, remainder);
-  // }
+  int remainder = arg->ntuples % arg->maxid;
+  if (remainder > 0) {
+    random_unique_gen(tuples, remainder);
+  }
+  */
 
   return NULL;
 }
@@ -169,10 +172,11 @@ build_pk_thread(void *params)
 }
 
 relation_t *
-parallel_build_relation_fk(size_t ntuples, const int32_t maxid, uint32_t nthreads)
+parallel_build_relation_fk(const size_t ntuples, const int32_t maxid, const uint32_t nnodes, const uint32_t nthreads)
 {
-  relation_t *rel = relation_init();
-  uint32_t nnodes = num_numa_nodes();
+  assert(nnodes <= num_numa_nodes());
+
+  relation_t *rel = relation_init(nnodes);
 
   assert(nthreads >= nnodes);
 
@@ -191,7 +195,7 @@ parallel_build_relation_fk(size_t ntuples, const int32_t maxid, uint32_t nthread
   int tid = 0;
   for (uint32_t node = 0; node < nnodes; ++node) {
     rel->ntuples_on_node[node] = (node == nnodes-1) ? ntuples_on_lastnode : ntuples_per_node;
-    size_t nthreads_on_node = (node == nnodes - 1) ? nthreads_per_node : nthreads_on_lastnode;
+    size_t nthreads_on_node = (node == nnodes - 1) ? nthreads_on_lastnode : nthreads_per_node;
     size_t ntuples_per_thread = rel->ntuples_on_node[node] / nthreads_on_node;
     size_t ntuples_lastthread = rel->ntuples_on_node[node] - ntuples_per_thread * (nthreads_on_node - 1);
 
@@ -228,10 +232,11 @@ parallel_build_relation_fk(size_t ntuples, const int32_t maxid, uint32_t nthread
 
 
 relation_t *
-parallel_build_relation_pk(size_t ntuples, uint32_t nthreads)
+parallel_build_relation_pk(size_t ntuples, uint32_t nnodes, uint32_t nthreads)
 {
-  relation_t *rel = relation_init();
-  uint32_t nnodes = num_numa_nodes();
+  assert(nnodes <= num_numa_nodes());
+
+  relation_t *rel = relation_init(nnodes);
 
   assert(nthreads >= nnodes);
 
@@ -252,7 +257,7 @@ parallel_build_relation_pk(size_t ntuples, uint32_t nthreads)
   int firstkey = 1; // we start from 1
   for (uint32_t node = 0; node < nnodes; ++node) {
     rel->ntuples_on_node[node] = (node == nnodes-1) ? ntuples_on_lastnode : ntuples_per_node;
-    size_t nthreads_on_node = (node == nnodes - 1) ? nthreads_per_node : nthreads_on_lastnode;
+    size_t nthreads_on_node = (node == nnodes - 1) ? nthreads_on_lastnode : nthreads_per_node;
     size_t ntuples_per_thread = rel->ntuples_on_node[node] / nthreads_on_node;
     size_t ntuples_lastthread = rel->ntuples_on_node[node] - ntuples_per_thread * (nthreads_on_node - 1);
 

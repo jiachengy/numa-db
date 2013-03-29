@@ -8,18 +8,6 @@
 #define USE_PERF
 #endif
 
-#ifndef PERF_PARTITION
-#define PERF_PARTITION 1
-#endif
-
-#ifndef PERF_JOIN
-#define PERF_JOIN 0
-#endif
-
-#ifndef PERF_ALL
-#define PERF_ALL 0
-#endif
-
 
 #ifndef PER_CORE
 #define PER_CORE 1
@@ -32,6 +20,25 @@
 #ifndef PER_SYSTEM
 #define PER_SYSTEM 0
 #endif
+
+
+#if PER_CORE == 1
+
+#ifndef PERF_PARTITION
+#define PERF_PARTITION 1
+#endif
+
+#ifndef PERF_JOIN
+#define PERF_JOIN 0
+#endif
+
+#ifndef PERF_ALL
+#define PERF_ALL 0
+#endif
+
+#endif
+
+
 
 typedef long long int counter_t;
 

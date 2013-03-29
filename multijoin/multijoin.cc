@@ -13,7 +13,7 @@ using namespace std;
 inline void run_task(Task *task, thread_t *my)
 {
   task->Run(my);      
-  delete task;
+  //  delete task;
 }
 
 void* work_thread(void *param)
@@ -22,12 +22,10 @@ void* work_thread(void *param)
   int cpu = my->cpu;
   cpu_bind(cpu);
 
-#ifdef USE_PERF
 #if PER_CORE==1
   perf_register_thread();
   my->perf = perf_init();
   perf_start(my->perf);
-#endif
 #endif
 
   Taskqueue *queue = my->node->queue;
@@ -56,23 +54,7 @@ void* work_thread(void *param)
     task = queue->Fetch();
     if (task) {
       my->shared++;
-
-#ifdef USE_PERF
-#if PERF_PARTITION == 1
-      if (task->type() == OpPartition) {
-        perf_reset(my->perf);
-      }
       run_task(task, my);
-
-      if (task->type() == OpPartition) {
-        perf_accum(my->perf);
-      }
-#endif
-
-#else
-      run_task(task, my);
-#endif
-
       continue;
     }
 
@@ -92,8 +74,8 @@ void* work_thread(void *param)
       // no bufferd task available
       // is there local probe work we can steal?
       thread_t **groups = my->node->groups;
-      int next_cpu = my->node->next_cpu;
-      for (int i = 0; i < my->node->nthreads; i++) {
+      uint32_t next_cpu = my->node->next_cpu;
+      for (uint32_t i = 0; i < my->node->nthreads; i++) {
         thread_t *t = groups[next_cpu];
         if (t->tid == my->tid) // skip myself
           continue;
@@ -130,7 +112,6 @@ void* work_thread(void *param)
 
         if (part_tasks) {
           my->stolentasks = part_tasks;
-          //          LOG(INFO) << "Heyheyhey.";
           break;
         }
       }
@@ -141,21 +122,78 @@ void* work_thread(void *param)
     }
   }
 
-#ifdef USE_PERF
 #if PER_CORE==1
-   perf_stop(my->perf);
-#if PERF_ALL
-   perf_read(my->perf);
+  perf_stop(my->perf);
+#if PERF_ALL == 1
+  perf_read(my->perf);
 #endif
-   //  perf_destroy(my->perf);
-   perf_unregister_thread();
-
+  //  perf_destroy(my->perf);
+  perf_unregister_thread();
 #endif
-#endif
-
-  //  LOG(INFO) << "Thread " << my->tid << " is existing.";
   return NULL;
 }
+
+void RadixPartition(Environment *env, relation_t *rel)
+{
+  env->RadixPartition(rel);
+
+#ifdef USE_PERF
+#if PER_SYSTEM==1
+  perf_t *perf = perf_init();
+  perf_start(perf);
+#endif  
+#endif
+
+  long t = micro_time();
+
+  pthread_t threads[env->nthreads()];
+  // start threads
+  for (int i = 0; i < env->nthreads(); i++) {
+    pthread_create(&threads[i], NULL, work_thread, (void*)&env->threads()[i]);
+  }
+
+  // join threads
+  for (int i = 0; i < env->nthreads(); i++)
+    pthread_join(threads[i], NULL);
+
+  t = (micro_time() - t) / 1000;
+
+
+#ifdef USE_PERF
+#if PER_SYSTEM==1
+  perf_read(perf);
+  perf_stop(perf);
+  perf_print(perf);
+  //  perf_destroy(perf);
+#endif
+
+#if PER_CORE == 1
+  thread_t *args = env->threads();
+  for (int i = 0; i < env->nthreads(); i++) {
+    cout << "Thread " << i << ":" << endl;
+    perf_print(args[i].perf);
+    if (i != 0) 
+      perf_aggregate(args[0].perf, args[i].perf);
+  }
+  cout << "Aggregate on thread 0:" << endl;
+  perf_print(args[0].perf);
+#endif
+#endif
+
+  thread_t *infos = env->threads();
+  for (int i = 0; i < env->nthreads(); i++) {
+    cout << "Thread[" << infos[i].cpu << "]:"
+         << infos[i].local << ","
+         << infos[i].shared << ","
+         << infos[i].remote << endl;
+  }
+
+  LOG(INFO) << "Running time: " << t << " msec";
+
+  LOG(INFO) << "All threads join.";
+
+}
+
 
 // two way hash join
 void HashJoin(Environment *env, relation_t *relR, relation_t *relS)
@@ -210,11 +248,9 @@ void HashJoin(Environment *env, relation_t *relR, relation_t *relS)
 #endif
 #endif
 
-
-
   thread_t *infos = env->threads();
   for (int i = 0; i < env->nthreads(); i++) {
-    cout << "Thread[" << cpu_of_thread_rr(i) << "]:"
+    cout << "Thread[" << infos[i].cpu << "]:"
          << infos[i].local << ","
          << infos[i].shared << ","
          << infos[i].remote << endl;

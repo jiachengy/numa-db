@@ -3,57 +3,9 @@
 #include "params.h"
 #include "hashjoin.h"
 
+#include "perf.h"
+
 #define HASH_BIT_MODULO(K, MASK, NBITS) (((K) & MASK) >> NBITS)
-
-void PartitionTask::ProcessBlock(thread_t *my, block_t block, uint32_t mask, uint32_t fanout, uint32_t hist[], tuple_t *dst[])
-{
-  // reset histogram
-  memset(hist, 0, fanout * sizeof(uint32_t));
-  
-  // first scan: set histogram
-  tuple_t *tuple = block.tuples;
-  for (uint32_t i = 0; i < block.size; i++) {
-    uint32_t idx = HASH_BIT_MODULO((tuple++)->key, mask, offset_);
-    hist[idx]++;
-  }
-
-  // set output buffer
-  for (uint32_t idx = 0; idx < fanout; idx++) {
-    int buffer_id = my->tid * fanout + idx;
-    Partition *outp = out_->GetBuffer(buffer_id);
-
-    // if buffer does not exists,  or if not enough space
-    if (!outp || Params::kPartitionSize - outp->size() < hist[idx]) {
-      // if the buffer is full
-      if (outp)
-        out_->AddPartition(outp);
-
-      // create a new buffer
-      // switch the output buffer to the new one
-
-#ifdef PRE_ALLOC
-      Partition *np = my->recycler->GetEmptyPartition();
-      np->set_key(idx);
-#else
-      Partition *np = new Partition(my->node_id, idx);
-      np->Alloc();
-      
-#endif
-      out_->SetBuffer(buffer_id, np);
-      outp = np;
-    }
-
-    dst[idx] = &outp->tuples()[outp->size()];
-    outp->set_size(outp->size() + hist[idx]); // set size at once
-  }
-
-  // second scan, partition and scatter
-  tuple = block.tuples;
-  for (uint32_t i = 0; i < block.size; i++) {
-    uint32_t idx = HASH_BIT_MODULO(tuple->key, mask, offset_);
-    *(dst[idx]++) = *(tuple++);
-  }
-}
 
 void PartitionTask::Finish(thread_t* my)
 {
@@ -105,20 +57,120 @@ void PartitionTask::Finish(thread_t* my)
 }
 
 
-void PartitionTask::Run(thread_t *args)
+void PartitionTask::Run(thread_t *my)
 {
+
+#if PERF_PARTITION == 1
+    perf_reset(my->perf);
+#endif
+
   uint32_t mask = ((1 << nbits_) - 1) << offset_;
   uint32_t fanout = 1 << nbits_;
   uint32_t hist[fanout];
   tuple_t *dst[fanout];
 
-  // process the partition in blocks  
-  while (!part_->done()) {
-    block_t block = part_->NextBlock();
-    ProcessBlock(args, block, mask, fanout, hist, dst);    
+  size_t ntuples_per_iter = Params::kBlockSize / sizeof(tuple_t);
+  int iters = part_->size() / ntuples_per_iter;
+
+  tuple_t *tuple = part_->tuples();
+  for (int iter = 0; iter < iters; ++iter) {
+    tuple += ntuples_per_iter;
+
+    // reset histogram
+    memset(hist, 0, fanout * sizeof(uint32_t));
+  
+    // first scan: set histogram
+    for (uint32_t i = 0; i < ntuples_per_iter; i++) {
+      uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
+      hist[idx]++;
+    }
+
+    // set output buffer
+    for (uint32_t idx = 0; idx < fanout; idx++) {
+      int buffer_id = my->tid * fanout + idx;
+      Partition *outp = out_->GetBuffer(buffer_id);
+
+      // if buffer does not exists,  or if not enough space
+      if (!outp || Params::kPartitionSize - outp->size() < hist[idx]) {
+        //  if the buffer is full
+        if (outp)
+          out_->AddPartition(outp);
+
+
+#ifdef PRE_ALLOC
+        Partition *np = my->recycler->GetEmptyPartition();
+        np->set_key(idx);
+#else
+        Partition *np = new Partition(my->node_id, idx);
+        np->Alloc();
+#endif
+        out_->SetBuffer(buffer_id, np);
+        outp = np;
+      }
+
+      dst[idx] = &outp->tuples()[outp->size()];
+      outp->set_size(outp->size() + hist[idx]); // set size at once
+    }
+
+    // second scan, partition and scatter
+    for (uint32_t i = 0; i < ntuples_per_iter; i++) {
+      uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
+      *(dst[idx]++) = tuple[i];
+    }
   }
 
-  Finish(args);
+
+  size_t remainder = part_->size() - iters * ntuples_per_iter;
+
+  // reset histogram
+  memset(hist, 0, fanout * sizeof(uint32_t));
+  
+  // first scan: set histogram
+  for (uint32_t i = 0; i < remainder; i++) {
+    uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
+    hist[idx]++;
+  }
+
+  // set output buffer
+  for (uint32_t idx = 0; idx < fanout; idx++) {
+    int buffer_id = my->tid * fanout + idx;
+    Partition *outp = out_->GetBuffer(buffer_id);
+
+    // if buffer does not exists,  or if not enough space
+    if (!outp || Params::kPartitionSize - outp->size() < hist[idx]) {
+      //  if the buffer is full
+      if (outp)
+        out_->AddPartition(outp);
+
+
+#ifdef PRE_ALLOC
+      Partition *np = my->recycler->GetEmptyPartition();
+      np->set_key(idx);
+#else
+      Partition *np = new Partition(my->node_id, idx);
+      np->Alloc();
+#endif
+      out_->SetBuffer(buffer_id, np);
+      outp = np;
+    }
+
+    dst[idx] = &outp->tuples()[outp->size()];
+    outp->set_size(outp->size() + hist[idx]); // set size at once
+  }
+
+  // second scan, partition and scatter
+  for (uint32_t i = 0; i < remainder; i++) {
+    uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
+    *(dst[idx]++) = tuple[i];
+  }
+
+
+  Finish(my);
+
+#if PERF_PARTITION == 1
+    perf_accum(my->perf);
+#endif
+
 }
 
 void BuildTask::Finish(thread_t* my, Partition *htp)
@@ -245,28 +297,29 @@ void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
         outp->Append(jr);
 
         // tuple_t *t = &outp->tuples()[outp->size()];
-      //   t->key = tuple->payload;
-      //   t->payload = next[hit-1].tuple.payload;
-      //   outp->set_size(outp->size() + 1);
+        //   t->key = tuple->payload;
+        //   t->payload = next[hit-1].tuple.payload;
+        //   outp->set_size(outp->size() + 1);
       }      
     }
   }
 }
 
-
+// TODO: unrolling the loop
 void UnitProbeTask::Run(thread_t *my)
 {
-  int key = part_->key();
+  // int key = part_->key();
 
-  hashtable_t *ht = build_->GetPartitionsByKey(key).front()->hashtable();
+  // hashtable_t *ht = build_->GetPartitionsByKey(key).front()->hashtable();
 
-  // process in blocks
-  while (!part_->done()) {
-    block_t block = part_->NextBlock();
-    ProbeBlock(my, block, ht);    
-  }
 
-  Finish(my);
+  // // process in blocks
+  // while (!part_->done()) {
+  //   block_t block = part_->NextBlock();
+  //   ProbeBlock(my, block, ht);    
+  // }
+
+  // Finish(my);
 }
 
 void UnitProbeTask::Finish(thread_t* my)
