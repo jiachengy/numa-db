@@ -1,7 +1,7 @@
 USE_PERF=1
 
 CC=g++
-CFLAGS=-pthread -Wall -O3
+CFLAGS=-pthread -Wall -g
 PERF_LIB=-lpapi
 DEFAULT_LIB=-lpthread -lglog -lnuma # -lperf
 #INC=-I../lib/intel-pcm-2.4

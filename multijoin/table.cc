@@ -43,7 +43,6 @@ void Partition::Reset() { 	// used by the recycler
   done_ = false;
   ready_ =false;
   size_ = 0;
-  curpos_ = 0;
 
   if (hashtable_)
     hashtable_reset(hashtable_);
@@ -113,7 +112,7 @@ void Table::AddPartition(Partition *p)
   if (nkeys_)
     pkeys_[p->key()].push_back(p);
   nparts_++;
-
+ 
   pthread_mutex_unlock(&mutex_);
 }
 

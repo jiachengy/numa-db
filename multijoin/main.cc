@@ -13,11 +13,11 @@
 
 #include "perf.h" // papi
 
+#define HASH_BIT_MODULO(K, MASK, NBITS) (((K) & MASK) >> NBITS)
+
 size_t Params::kMaxHtTuples = 0;
 
 using namespace std;
-
-#define HASH_BIT_MODULO(K, MASK, NBITS) (((K) & MASK) >> NBITS)
 
 void
 radix_cluster(tuple_t *  outRel,
@@ -44,7 +44,6 @@ radix_cluster(tuple_t *  outRel,
   uint32_t dst[fanOut];
   int32_t hist[fanOut];
 
-
   memset(hist, 0x0, sizeof(int32_t) * fanOut);
 
   /* count tuples per cluster */
@@ -52,6 +51,7 @@ radix_cluster(tuple_t *  outRel,
     uint32_t idx = HASH_BIT_MODULO(inRel[i].key, M, R);
     hist[idx]++;
   }
+
   offset = 0;
   /* determine the start and end of each cluster depending on the counts. */
   for ( i=0; i < fanOut; i++ ) {
@@ -92,10 +92,10 @@ int main(int argc, char *argv[])
   perf_lib_init(NULL, NULL);
 #endif
 
+  int nthreads = atoi(argv[1]);
       
   size_t rsize = 128 * 1024 * 1024; // 128M
   //  size_t ssize = 16 * 1024 * 1024; // 128M
-
 
   relation_t *relR = parallel_build_relation_fk(rsize, rsize, 1, 1);
   //  relation_t *relS = parallel_build_relation_fk(ssize, rsize, 4, 8);
@@ -107,14 +107,12 @@ int main(int argc, char *argv[])
   memset(out, 0x0, sizeof(tuple_t) * rsize);
   radix_cluster(out, relR->tuples[0], rsize, Params::kOffsetPass1, Params::kNumBitsPass1);
 
-
-
   size_t mem_limit = 1024L  * 1024L * 1024L * 4; // 4GB
   
   Params::kMaxHtTuples = 0; // rsize / Params::kFanoutPass1 * 2;
   LOG(INFO) << "max ht tuples: " << Params::kMaxHtTuples;
 
-  Environment *env = new Environment(1, 1, mem_limit);
+  Environment *env = new Environment(1, nthreads, mem_limit);
   LOG(INFO) << "Env set up.";
 
   //  HashJoin(env, relR, relS);

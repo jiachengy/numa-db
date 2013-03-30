@@ -7,8 +7,6 @@
 
 using namespace std;
 
-
-
 Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t memory_limit)
   : nthreads_(nthreads), nnodes_(nnodes),
     memlimit_(memory_limit), done_(false)
@@ -294,7 +292,5 @@ Environment::RadixPartition(relation_t *rel)
          it != pr.end(); it++) {
       pass1tasks->AddTask(new PartitionTask(OpPartition, *it, rt, pass1tb, Params::kOffsetPass1, Params::kNumBitsPass1));
     }
-
-    LOG(INFO) << pr.size() << " partition tasks are created in list " << pass1tasks->id();
   }
 }

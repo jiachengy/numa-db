@@ -115,9 +115,9 @@ build_fk_thread(void *params)
   tuple_t *tuples = rel->tuples[node] + arg->offset;
   assert(tuples != NULL);
 
-  random_gen(tuples, arg->ntuples, arg->maxid);
+  //  random_gen(tuples, arg->ntuples, arg->maxid);
 
-  /*
+  
   int iters = arg->ntuples / arg->maxid;
 
   for (int iter = 0; iter < iters; ++iter) {
@@ -129,7 +129,6 @@ build_fk_thread(void *params)
   if (remainder > 0) {
     random_unique_gen(tuples, remainder);
   }
-  */
 
   return NULL;
 }

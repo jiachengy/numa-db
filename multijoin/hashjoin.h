@@ -87,7 +87,7 @@ class UnitProbeTask : public Task
 
   Table *build_;
 
-  void ProbeBlock(thread_t *my, block_t block, hashtable_t *ht);
+  //  void ProbeBlock(thread_t *my, block_t block, hashtable_t *ht);
   void Finish(thread_t* my);
 
  public:

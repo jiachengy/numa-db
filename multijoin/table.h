@@ -16,14 +16,6 @@ class Table;
 
 using namespace std;
 
-struct block_t {
-  tuple_t *tuples;
-  size_t size;
-
-  block_t(tuple_t *ts, size_t sz) : tuples(ts), size(sz) {}
-};
-
-
 class Partition {
  private:
   const int node_; // numa location
@@ -34,7 +26,6 @@ class Partition {
 
   tuple_t *tuples_;
   size_t size_;
-  uint32_t curpos_;
   hashtable_t *hashtable_;
 
 
@@ -42,7 +33,7 @@ class Partition {
   Partition(int node, int key) 
     : node_(node), key_(key),
     done_(false), ready_(false),
-    tuples_(NULL), size_(0), curpos_(0),
+    tuples_(NULL), size_(0),
     hashtable_(NULL) {}
   ~Partition();
 

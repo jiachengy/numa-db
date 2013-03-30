@@ -45,7 +45,8 @@ Recycler::Alloc(size_t size)
 {
   for (uint32_t i = 0; i < size; i++) {
     Partition *p = new Partition(node_, -1);
-    p->set_tuples((tuple_t*)(data_ + cur_));
+    char *ptr = data_ + cur_;
+    p->set_tuples((tuple_t*)ptr);
     cur_ += Params::kPartitionSize;
 
     assert(cur_ <= capacity_);

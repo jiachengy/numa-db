@@ -59,7 +59,6 @@ void PartitionTask::Finish(thread_t* my)
 
 void PartitionTask::Run(thread_t *my)
 {
-
 #if PERF_PARTITION == 1
     perf_reset(my->perf);
 #endif
@@ -70,12 +69,11 @@ void PartitionTask::Run(thread_t *my)
   tuple_t *dst[fanout];
 
   size_t ntuples_per_iter = Params::kBlockSize / sizeof(tuple_t);
+
   int iters = part_->size() / ntuples_per_iter;
 
   tuple_t *tuple = part_->tuples();
-  for (int iter = 0; iter < iters; ++iter) {
-    tuple += ntuples_per_iter;
-
+  for (int iter = 0; iter < iters; ++iter, tuple += ntuples_per_iter) {
     // reset histogram
     memset(hist, 0, fanout * sizeof(uint32_t));
   
@@ -91,7 +89,8 @@ void PartitionTask::Run(thread_t *my)
       Partition *outp = out_->GetBuffer(buffer_id);
 
       // if buffer does not exists,  or if not enough space
-      if (!outp || Params::kPartitionSize - outp->size() < hist[idx]) {
+      if (!outp || 
+          (Params::kPartitionSize/sizeof(tuple_t)) - outp->size() < hist[idx]) {
         //  if the buffer is full
         if (outp)
           out_->AddPartition(outp);
@@ -115,55 +114,61 @@ void PartitionTask::Run(thread_t *my)
     // second scan, partition and scatter
     for (uint32_t i = 0; i < ntuples_per_iter; i++) {
       uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
-      *(dst[idx]++) = tuple[i];
+      *dst[idx] = tuple[i];
+      dst[idx]++;
     }
   }
+
 
 
   size_t remainder = part_->size() - iters * ntuples_per_iter;
 
-  // reset histogram
-  memset(hist, 0, fanout * sizeof(uint32_t));
-  
-  // first scan: set histogram
-  for (uint32_t i = 0; i < remainder; i++) {
-    uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
-    hist[idx]++;
-  }
+  if (remainder) {
+    tuple = part_->tuples() + iters * ntuples_per_iter;  
 
-  // set output buffer
-  for (uint32_t idx = 0; idx < fanout; idx++) {
-    int buffer_id = my->tid * fanout + idx;
-    Partition *outp = out_->GetBuffer(buffer_id);
+    // reset histogram
+    memset(hist, 0, fanout * sizeof(uint32_t));
 
-    // if buffer does not exists,  or if not enough space
-    if (!outp || Params::kPartitionSize - outp->size() < hist[idx]) {
-      //  if the buffer is full
-      if (outp)
-        out_->AddPartition(outp);
+    // first scan: set histogram
+    for (uint32_t i = 0; i < remainder; i++) {
+      uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
+      hist[idx]++;
+    }
+
+    // set output buffer
+    for (uint32_t idx = 0; idx < fanout; idx++) {
+      int buffer_id = my->tid * fanout + idx;
+      Partition *outp = out_->GetBuffer(buffer_id);
+
+      // if buffer does not exists,  or if not enough space
+      if (!outp || (Params::kPartitionSize / sizeof(tuple_t)) - outp->size() < hist[idx]) {
+        //  if the buffer is full
+        if (outp)
+          out_->AddPartition(outp);
 
 
 #ifdef PRE_ALLOC
-      Partition *np = my->recycler->GetEmptyPartition();
-      np->set_key(idx);
+        Partition *np = my->recycler->GetEmptyPartition();
+        np->set_key(idx);
 #else
-      Partition *np = new Partition(my->node_id, idx);
-      np->Alloc();
+        Partition *np = new Partition(my->node_id, idx);
+        np->Alloc();
 #endif
-      out_->SetBuffer(buffer_id, np);
-      outp = np;
+        out_->SetBuffer(buffer_id, np);
+        outp = np;
+      }
+
+      dst[idx] = &outp->tuples()[outp->size()];
+      outp->set_size(outp->size() + hist[idx]); // set size at once
     }
 
-    dst[idx] = &outp->tuples()[outp->size()];
-    outp->set_size(outp->size() + hist[idx]); // set size at once
+    // second scan, partition and scatter
+    for (uint32_t i = 0; i < remainder; i++) {
+      uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
+      *dst[idx] = tuple[i];
+      dst[idx]++;
+    }
   }
-
-  // second scan, partition and scatter
-  for (uint32_t i = 0; i < remainder; i++) {
-    uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
-    *(dst[idx]++) = tuple[i];
-  }
-
 
   Finish(my);
 
@@ -253,7 +258,7 @@ void BuildTask::Run(thread_t *my)
   Finish(my, htp);
 }
 
-
+/*
 void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
 {
   const uint32_t MASK = (ht->nbuckets-1) << (Params::kNumRadixBits);
@@ -304,6 +309,7 @@ void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
     }
   }
 }
+*/
 
 // TODO: unrolling the loop
 void UnitProbeTask::Run(thread_t *my)

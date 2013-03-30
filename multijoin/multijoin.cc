@@ -191,7 +191,6 @@ void RadixPartition(Environment *env, relation_t *rel)
   LOG(INFO) << "Running time: " << t << " msec";
 
   LOG(INFO) << "All threads join.";
-
 }
 
 
