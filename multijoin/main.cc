@@ -27,8 +27,6 @@ radix_cluster(tuple_t *  outRel,
               int D)
 {
 
-
-
   long t = micro_time();
   perf_t *perf = perf_init();
   perf_start(perf);
@@ -119,8 +117,8 @@ int main(int argc, char *argv[])
   //  HashJoin(env, relR, relS);
   //  RadixPartition(env, relR);
 
-   env->RadixPartition(relR);
-   //   env->TwoPassPartition(relR, NULL);
+  //    env->RadixPartition(relR);
+  env->TwoPassPartition(relR, NULL);
 
   Run(env);
 

@@ -61,8 +61,8 @@ class Partition {
   tuple_t* RequestSpace(size_t ntuples) {
     tuple_t *ptr = NULL;
     if ((Params::kPartitionSize / sizeof(tuple_t)) - size_ >= ntuples) {
+      ptr = tuples_ + size_;
       size_ += ntuples;
-      ptr = tuples_;
     }
     return ptr;
   }

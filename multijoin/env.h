@@ -35,6 +35,12 @@ struct thread_t {
   int tid_of_node;
   int cpu;
   int node_id;
+
+  /* a batch task is a composite task */
+  /* e.g. partition pass2 or probing */
+  Task *batch_task;
+  /* localtasks store the tasklists in the batch task */
+  /* localtasks and batch_task have to be updated at the same time */
   Tasklist *localtasks;
   Tasklist *stolentasks; // stolen
 

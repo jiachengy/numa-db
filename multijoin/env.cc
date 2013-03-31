@@ -44,6 +44,7 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t memory_limit
       thread->cpu = cpu;
       thread->node_id = nid;
       thread->node = node;
+      thread->batch_task = NULL;
       thread->localtasks = NULL;
       thread->stolentasks = NULL;
       thread->env = this;
@@ -163,6 +164,7 @@ Environment::Reset()
   }
 
   for (uint32_t t = 0; t < nthreads_; t++) {
+    threads_[t].batch_task = NULL;
     threads_[t].localtasks = NULL;
     threads_[t].stolentasks = NULL;
     threads_[t].local = 0;
@@ -213,9 +215,9 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
   Table *rt = Table::BuildTableFromRelation(relR);
   rt->set_type(OpPartition);
 
-  Table *rpass1tb = new Table(OpPartition, nnodes_,
+  Table *rpass1tb = new Table(OpPartition2, nnodes_,
                               Params::kFanoutPass1,
-                              nnodes_ * Params::kFanoutPass1);
+                              nthreads_per_node() * Params::kFanoutPass1);
 
   Table *rpass2tb = new Table(OpNone, nnodes_,
                               Params::kFanoutTotal,
@@ -248,6 +250,7 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
     for (int key = 0; key < Params::kFanoutPass1; ++key) {
       p2_tasks_on_node[key] = new P2Task(key, rpass1tb, rpass2tb);
     }
+    p2tasksR[node] = p2_tasks_on_node;
   }
 
 

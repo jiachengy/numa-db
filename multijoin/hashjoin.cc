@@ -104,8 +104,12 @@ void PartitionTask::Run(thread_t *my)
     // for PASS 1, we give every thread its own buffers    
     
     // BE CAREFUL, THE TID HERE MEANS ID ON THAT NODE
-    int buffer_id = Params::kFanoutPass1 * my->tid_of_node + realid;
-
+    int buffer_id;
+    if (offset_ == 0)
+      buffer_id = Params::kFanoutPass1 * my->tid_of_node + realid;
+    else
+      buffer_id = realid;
+    
     buffer_ids[idx] = buffer_id;
   }
 
@@ -128,8 +132,8 @@ void PartitionTask::Run(thread_t *my)
     for (uint32_t idx = 0; idx < fanout; idx++) {
       int buffer_id = buffer_ids[idx];
       
-      Partition *outp = out_->GetBuffer(my->node_id, buffer_id);
-
+      Partition *outp = out_->GetBuffer(my->node_id, buffer_id); // ALWAYS WRITE LOCAL
+      
       tuple_t *out = NULL;
       // if buffer does not exists,  or if not enough space
       if (!outp || (out=outp->RequestSpace(hist[idx])) == NULL ) {
@@ -147,7 +151,6 @@ void PartitionTask::Run(thread_t *my)
         out = outp->RequestSpace(hist[idx]);
       }
 
-      assert(out != NULL);
       dst[idx] = out;
     }
 
@@ -162,7 +165,6 @@ void PartitionTask::Run(thread_t *my)
 
 
   size_t remainder = part_->size() - iters * ntuples_per_iter;
-
   if (remainder) {
     tuple = part_->tuples() + iters * ntuples_per_iter;  
 
@@ -178,7 +180,7 @@ void PartitionTask::Run(thread_t *my)
     // set output buffer
     for (uint32_t idx = 0; idx < fanout; idx++) {
       int buffer_id = buffer_ids[idx];
-      Partition *outp = out_->GetBuffer(part_->node(), buffer_id);
+      Partition *outp = out_->GetBuffer(my->node_id, buffer_id); // ALWAYS WRITE LOCAL
 
       tuple_t *out;
       // if buffer does not exists,  or if not enough space
@@ -192,13 +194,12 @@ void PartitionTask::Run(thread_t *my)
         Partition *np = my->recycler->GetEmptyPartition();
         np->set_key(GET_REAL_IDX(part_->key(), offset_, idx));
 
-        out_->SetBuffer(np->node(), buffer_id, np);
+        out_->SetBuffer(my->node_id, buffer_id, np);
         outp = np;
         out = outp->RequestSpace(hist[idx]);
       }
 
       dst[idx] = out;
-//      outp->set_size(outp->size() + hist[idx]); // set size at once
     }
 
     // second scan, partition and scatter
@@ -403,6 +404,6 @@ void UnitProbeTask::Finish(thread_t* my)
 
 void ProbeTask::Run(thread_t *my)
 {
-  Tasklist *probes = my->env->probes()[key_];
-  my->localtasks = probes;
+  //  Tasklist *probes = my->env->probes()[key_];
+  my->batch_task = this;
 }

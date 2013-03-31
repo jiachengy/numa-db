@@ -59,7 +59,10 @@ class P2Task : public Task
   }
 
   virtual void Run(thread_t *my) {
+    LOG(INFO) << key_ << " is fetched by " << my->tid;
+    assert(my->batch_task == NULL);
     assert(my->localtasks == NULL);    
+    my->batch_task = this;
     my->localtasks = subtasks_;
   }
 

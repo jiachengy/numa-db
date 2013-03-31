@@ -114,6 +114,10 @@ void Table::AddPartition(Partition *p)
   if (nkeys_)
     pkeys_[p->key()].push_back(p);
   nparts_++;
+
+  tuple_t *tuple = p->tuples();
+  for (uint32_t i = 0; i < p->size(); i++)
+    assert(tuple[i].key != 0);
  
   pthread_mutex_unlock(&mutex_);
 }

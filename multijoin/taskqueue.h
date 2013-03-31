@@ -15,7 +15,6 @@ class Taskqueue;
 
 using namespace std;
 
-
 class Task
 {
  protected:
@@ -33,6 +32,8 @@ class Task
 
   void set_in(Table *in) { in_ = in; }
   void set_out(Table *out) { out_ = out; }
+
+  int id() { assert(in_ != NULL); return in_->id(); }
 };
 
 
@@ -140,7 +141,9 @@ class Taskqueue
   // if the task is put back
   // its tasklist must still be active
   void Putback(int taskid, Task *task) {
+    pthread_mutex_lock(&mutex_);
     queues_[taskid]->AddTaskAtomic(task);
+    pthread_mutex_unlock(&mutex_);
   }
 
   void Unblock(int taskid) {
