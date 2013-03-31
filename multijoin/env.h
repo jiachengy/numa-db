@@ -31,6 +31,8 @@ struct node_t {
 
 struct thread_t {
   int tid;
+
+  int tid_of_node;
   int cpu;
   int node_id;
   Tasklist *localtasks;
@@ -92,6 +94,9 @@ class Environment
   node_t *nodes() { return nodes_; }
   thread_t *threads() { return threads_; }
   int nthreads() { return nthreads_; }
+
+  int nthreads_per_node() { return nthreads_ / nnodes_; }
+
   int nnodes() { return nnodes_; }
   bool done() { return done_; }
   void set_done() { done_ = true; }
@@ -103,14 +108,18 @@ class Environment
     return tables_[table_id];
   }
 
+  Table* output_table() {
+    return tables_[tables_.size() - 1];
+  }
+
   void AddTable(Table *table) {
     tables_.push_back(table);
   }
 
   void Reset();
 
+  void TwoPassPartition(relation_t *relR, relation_t *relS);
   void RadixPartition(relation_t *rel);
-  void CreateJoinTasks(relation_t *relR, relation_t *relS);
 };
 
 #endif // ENV_H_

@@ -17,6 +17,8 @@ Partition::~Partition()
     free(hashtable_); // just deallocate the hashtable_t
     hashtable_ = NULL;
   }
+
+  pthread_mutex_destroy(&mutex_);
 }
 
 void Partition::Alloc()
@@ -63,7 +65,6 @@ Table::Table(uint32_t nnodes, uint32_t nkeys)
   pnodes_.resize(nnodes);
 
   nbuffers_ = 0;
-  buffers_ = NULL;
 
   pthread_mutex_init(&mutex_, NULL);
 }
@@ -83,16 +84,17 @@ Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers)
   pnodes_.resize(nnodes);
 
   nbuffers_ = nbuffers;
-  buffers_ = (Partition**)malloc(sizeof(Partition*) * nbuffers);
-  memset(buffers_, 0, sizeof(Partition*) * nbuffers);
+
+  buffers_.resize(nnodes_);  
+  for (uint32_t node = 0; node < nnodes; ++node) {
+    for (uint32_t b = 0; b < nbuffers_; b++)
+      buffers_[node].push_back(NULL);
+  }
 
   pthread_mutex_init(&mutex_, NULL);
 }
 
 Table::~Table() {
-  if (buffers_)
-    free(buffers_);
-
   for (uint32_t node = 0; node < nnodes_; ++node) {
     list<Partition*> &pnode = pnodes_[node];
     for (list<Partition*>::iterator it = pnode.begin();
@@ -141,7 +143,7 @@ Table::BuildTableFromRelation(relation_t *rel)
     tuple_t *tuple = rel->tuples[node];
     while (ntuples > 0) {
       size_t psize = (ntuples > ntuples_per_partition) ? ntuples_per_partition : ntuples;
-      Partition *p = new Partition(node, -1);
+      Partition *p = new Partition(node, 0, ShareLocal);
       p->set_tuples(tuple);
       p->set_size(psize);
 

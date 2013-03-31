@@ -44,7 +44,7 @@ void
 Recycler::Alloc(size_t size)
 {
   for (uint32_t i = 0; i < size; i++) {
-    Partition *p = new Partition(node_, -1);
+    Partition *p = new Partition(node_, -1, ShareLocal);
     char *ptr = data_ + cur_;
     p->set_tuples((tuple_t*)ptr);
     cur_ += Params::kPartitionSize;
@@ -60,7 +60,7 @@ Recycler::AllocHT(size_t size)
 {
   size_t htsz;
   for (uint32_t i = 0; i < size; i++) {
-    Partition *p = new Partition(node_, -1);
+    Partition *p = new Partition(node_, -1, ShareLocal);
     hashtable_t *ht = hashtable_init_noalloc(Params::kMaxHtTuples);
     ht->next = (entry_t*)(data_ + cur_);
     cur_ += (sizeof(entry_t) * ht->ntuples);

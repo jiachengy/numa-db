@@ -15,10 +15,18 @@ struct tuple_t {
 enum OpType {
   OpNone,
   OpPartition,
+  OpPartition2,
   OpBuild,
   OpProbe,
   OpUnitProbe,
 };
+
+enum ShareLevel {
+  ShareLocal,
+  ShareNode,
+  ShareGlobal
+};
+
 
 struct relation_t
 {

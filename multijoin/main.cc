@@ -94,20 +94,21 @@ int main(int argc, char *argv[])
 
   int nthreads = atoi(argv[1]);
       
-  size_t rsize = 128 * 1024 * 1024; // 128M
-  //  size_t ssize = 16 * 1024 * 1024; // 128M
+  size_t rsize = 16 * 1024 * 1024; // 128M
+  //  size_t ssize = 128 * 1024 * 1024; // 128M
 
-  relation_t *relR = parallel_build_relation_fk(rsize, rsize, 1, 1);
-  //  relation_t *relS = parallel_build_relation_fk(ssize, rsize, 4, 8);
+  relation_t *relR = parallel_build_relation_fk(rsize, rsize, 1, 8);
+  //  relation_t *relS = parallel_build_relation_fk(ssize, rsize, 1, 8);
+
   LOG(INFO) << "Building tables done.";
   LOG(INFO) << "==============================";
 
-  cpu_bind(0);
-  tuple_t *out = (tuple_t*)alloc(sizeof(tuple_t) * rsize);
-  memset(out, 0x0, sizeof(tuple_t) * rsize);
-  radix_cluster(out, relR->tuples[0], rsize, Params::kOffsetPass1, Params::kNumBitsPass1);
+  // cpu_bind(0);
+  // tuple_t *out = (tuple_t*)alloc(sizeof(tuple_t) * rsize);
+  // memset(out, 0x0, sizeof(tuple_t) * rsize);
+  // radix_cluster(out, relR->tuples[0], rsize, Params::kOffsetPass1, Params::kNumBitsPass1);
 
-  size_t mem_limit = 1024L  * 1024L * 1024L * 4; // 4GB
+  size_t mem_limit = 1024L  * 1024L * 1024L * 8; // 4GB
   
   Params::kMaxHtTuples = 0; // rsize / Params::kFanoutPass1 * 2;
   LOG(INFO) << "max ht tuples: " << Params::kMaxHtTuples;
@@ -116,13 +117,18 @@ int main(int argc, char *argv[])
   LOG(INFO) << "Env set up.";
 
   //  HashJoin(env, relR, relS);
-   RadixPartition(env, relR);
+  //  RadixPartition(env, relR);
 
-  // delete env;
+   env->RadixPartition(relR);
+   //   env->TwoPassPartition(relR, NULL);
+
+  Run(env);
 
 #ifdef USE_PERF
   perf_lib_cleanup();
 #endif
+
+  delete env;
 
   return 0;
 }

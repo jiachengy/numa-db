@@ -133,9 +133,8 @@ void* work_thread(void *param)
   return NULL;
 }
 
-void RadixPartition(Environment *env, relation_t *rel)
+void Run(Environment *env)
 {
-  env->RadixPartition(rel);
 
 #ifdef USE_PERF
 #if PER_SYSTEM==1
@@ -170,8 +169,8 @@ void RadixPartition(Environment *env, relation_t *rel)
 #if PER_CORE == 1
   thread_t *args = env->threads();
   for (int i = 0; i < env->nthreads(); i++) {
-    cout << "Thread " << i << ":" << endl;
-    perf_print(args[i].perf);
+    //    cout << "Thread " << i << ":" << endl;
+    //    perf_print(args[i].perf);
     if (i != 0) 
       perf_aggregate(args[0].perf, args[i].perf);
   }
@@ -191,88 +190,16 @@ void RadixPartition(Environment *env, relation_t *rel)
   LOG(INFO) << "Running time: " << t << " msec";
 
   LOG(INFO) << "All threads join.";
-}
 
-
-// two way hash join
-void HashJoin(Environment *env, relation_t *relR, relation_t *relS)
-{
-  // init the task queues
-  env->CreateJoinTasks(relR, relS);
-
-  LOG(INFO) << "Task initialized.";
-
-
-#ifdef USE_PERF
-#if PER_SYSTEM==1
-  perf_t *perf = perf_init();
-  perf_start(perf);
-#endif  
-#endif
-
-  long t = micro_time();
-
-  pthread_t threads[env->nthreads()];
-  // start threads
-  for (int i = 0; i < env->nthreads(); i++) {
-    pthread_create(&threads[i], NULL, work_thread, (void*)&env->threads()[i]);
+  
+  Table *tb = env->output_table();
+  for (uint32_t key = 0; key < tb->nkeys(); key++) {
+    list<Partition*> &ps = tb->GetPartitionsByKey(key);
+    size_t size = 0;
+    for (list<Partition*>::iterator it = ps.begin();
+         it != ps.end(); ++it) {
+      size += (*it)->size();
+    }
+    LOG(INFO) << "part " << key << " size: " << size;
   }
-
-  // join threads
-
-  for (int i = 0; i < env->nthreads(); i++)
-    pthread_join(threads[i], NULL);
-
-  t = (micro_time() - t) / 1000;
-
-
-#ifdef USE_PERF
-#if PER_SYSTEM==1
-  perf_stop(perf);
-  perf_print(perf);
-  perf_destroy(perf);
-#endif
-
-#if PER_CORE == 1
-  thread_t *args = env->threads();
-  for (int i = 0; i < env->nthreads(); i++) {
-    cout << "Thread " << i << ":" << endl;
-    perf_print(args[i].perf);
-    if (i != 0) 
-      perf_aggregate(args[0].perf, args[i].perf);
-  }
-
-  cout << "Aggregate on thread 0:" << endl;
-  perf_print(args[0].perf);
-#endif
-#endif
-
-  thread_t *infos = env->threads();
-  for (int i = 0; i < env->nthreads(); i++) {
-    cout << "Thread[" << infos[i].cpu << "]:"
-         << infos[i].local << ","
-         << infos[i].shared << ","
-         << infos[i].remote << endl;
-  }
-
-  for (int i = 0; i < env->nnodes(); i++) {
-    int nht = env->GetTable(0)->GetPartitionsByNode(i).size();
-    cout << "node " << i << " has " << nht << endl;
-  }
-
-
-  for (int i = 0; i < env->nnodes(); i++) {
-    int nht = env->GetTable(4)->GetPartitionsByNode(i).size();
-    cout << "node " << i << " has " << nht << endl;
-  }
-
-  for (int i = 0; i < env->nnodes(); i++) {
-    int nht = env->GetTable(5)->GetPartitionsByNode(i).size();
-    cout << "node " << i << " has " << nht << endl;
-  }
-
-
-  LOG(INFO) << "Running time: " << t << " msec";
-
-  LOG(INFO) << "All threads join.";
 }

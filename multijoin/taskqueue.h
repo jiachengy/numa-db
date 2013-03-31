@@ -15,22 +15,24 @@ class Taskqueue;
 
 using namespace std;
 
-enum ShareLevel {
-  ShareLocal,
-  ShareNode,
-  ShareGlobal
-};
 
 class Task
 {
  protected:
   const OpType type_;
+  Table *in_;
+  Table *out_;
+
  public:
-  Task(OpType type) : type_(type) {}
+  Task(OpType type) : type_(type), in_(NULL), out_(NULL) {}
+ 
   virtual ~Task() {}
 
   virtual void Run(thread_t *args) = 0;    
   OpType type() { return type_; }
+
+  void set_in(Table *in) { in_ = in; }
+  void set_out(Table *out) { out_ = out; }
 };
 
 
@@ -57,11 +59,15 @@ class Tasklist
 
   void AddTaskAtomic(Task *task) {
     pthread_mutex_lock(&mutex_);
+    task->set_in(in_);
+    task->set_out(out_);
     tasks_.push(task);
     pthread_mutex_unlock(&mutex_);
   }
 
   void AddTask(Task *task) {
+    task->set_in(in_);
+    task->set_out(out_);
     tasks_.push(task);
   }
 
@@ -111,7 +117,13 @@ class Taskqueue
       queues_.resize(taskid + 1);
     }
     queues_[taskid] = list;
+
     pthread_mutex_unlock(&mutex_);
+  }
+
+
+  Tasklist* GetTasklist(int taskid) {
+    return queues_[taskid];
   }
 
   void AddTask(int taskid, Task *task) {
@@ -120,7 +132,16 @@ class Taskqueue
     pthread_mutex_unlock(&mutex_);
   }
 
+
   Task* Fetch();
+  
+  // we allow putting back a task
+  // when are in the middle of processing
+  // if the task is put back
+  // its tasklist must still be active
+  void Putback(int taskid, Task *task) {
+    queues_[taskid]->AddTaskAtomic(task);
+  }
 
   void Unblock(int taskid) {
     pthread_mutex_lock(&mutex_);

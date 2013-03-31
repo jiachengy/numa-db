@@ -10,6 +10,7 @@
 class Partition;
 class Table;
 
+#include "params.h"
 #include "hashtable.h" // hashtable_t
 #include "types.h" // OpType
 #include "util.h" // get_running_node
@@ -28,19 +29,44 @@ class Partition {
   size_t size_;
   hashtable_t *hashtable_;
 
+  pthread_mutex_t mutex_; // protect tuple place allocation
+
+  ShareLevel share_;
 
  public:
-  Partition(int node, int key) 
+ Partition(int node, int key, ShareLevel share) 
     : node_(node), key_(key),
     done_(false), ready_(false),
     tuples_(NULL), size_(0),
-    hashtable_(NULL) {}
+    hashtable_(NULL), share_(share) {
+    pthread_mutex_init(&mutex_, NULL);
+  }
+  
   ~Partition();
-
 
   // Called only if recycler is not used
   void Alloc();
   void Dealloc();
+
+  void Acquire() {
+    pthread_mutex_lock(&mutex_);
+  }
+
+  void Release() {
+    pthread_mutex_unlock(&mutex_);
+  }
+
+  /* request space for ntuples */
+  /* return NULL if no enough space */
+  tuple_t* RequestSpace(size_t ntuples) {
+    tuple_t *ptr = NULL;
+    if ((Params::kPartitionSize / sizeof(tuple_t)) - size_ >= ntuples) {
+      size_ += ntuples;
+      ptr = tuples_;
+    }
+    return ptr;
+  }
+
 
   void Reset();
   void Append(tuple_t tuple) { tuples_[size_++] = tuple; }
@@ -87,7 +113,7 @@ class Table {
 
   // output buffer
   size_t nbuffers_; 
-  Partition** buffers_;
+  vector<vector<Partition* > > buffers_;
 
   // locking
   pthread_mutex_t mutex_;
@@ -107,8 +133,8 @@ class Table {
   list<Partition*>& GetPartitionsByNode(int node) {return pnodes_[node];}
   list<Partition*>& GetPartitionsByKey(int key) { return pkeys_[key]; }
 
-  Partition* GetBuffer(int buffer_id) {return buffers_[buffer_id];}
-  void SetBuffer(int buffer_id, Partition *buffer) {buffers_[buffer_id] = buffer;}
+  Partition* GetBuffer(int node, int buffer_id) {return buffers_[node][buffer_id];}
+  void SetBuffer(int node, int buffer_id, Partition *buffer) {buffers_[node][buffer_id] = buffer;}
 
   uint32_t nnodes() { return nnodes_; }
   uint32_t nkeys() { return nkeys_; }

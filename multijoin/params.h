@@ -33,7 +33,7 @@ class Params
 
   static const int kFanoutPass1 = 1 << kNumBitsPass1;
   static const int kFanoutPass2 = 1 << kNumBitsPass2;
-	
+  static const int kFanoutTotal = 1 << kNumRadixBits;
 };
 
 #endif // PARAMS_H_
