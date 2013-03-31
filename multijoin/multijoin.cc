@@ -61,6 +61,8 @@ void* work_thread(void *param)
       }
     }
 
+    assert(my->localtasks == NULL);
+
     // poll node shared tasks
     task = queue->Fetch();
     if (task) {
@@ -69,71 +71,73 @@ void* work_thread(void *param)
       continue;
     }
 
-    /*
+    assert(task == NULL);
+    
     // poll buffered stolen task
     if (my->stolentasks) {
       task = my->stolentasks->FetchAtomic();
+      
+      // case 1: we steal a job
       if (task) {
         my->remote++;
         run_task(task, my);
         continue;
       }
-      else if (my->stolentasks->exhausted())
+      // case 2: the job we trying to steal is empty or has already exhausted
+      else {
         my->stolentasks = NULL;
+      }
     }
 
+    assert(my->stolentasks == NULL);
+    
     if (!my->stolentasks) {
       // no bufferd task available
-      // is there local probe work we can steal?
+      // is there local pass2 partition / probe work we can steal?
       thread_t **groups = my->node->groups;
-      uint32_t next_cpu = my->node->next_cpu;
+      uint32_t steal_cpu, next_cpu;
       for (uint32_t i = 0; i < my->node->nthreads; i++) {
-        thread_t *t = groups[next_cpu];
+        // use compare and swap to update the stealing
+        do {
+          steal_cpu = my->node->next_cpu;
+          next_cpu = (steal_cpu == my->node->nthreads - 1) ? 0 : steal_cpu + 1;
+        } while (!__sync_bool_compare_and_swap(&my->node->next_cpu, steal_cpu, next_cpu));
+                 
+        thread_t *t = groups[steal_cpu];
         if (t->tid == my->tid) // skip myself
           continue;
-        ++next_cpu;
-        if (next_cpu == my->node->nthreads)
-          next_cpu = 0;
 
         if (t->localtasks) {
           my->stolentasks = t->localtasks; // steal it!
-
-          pthread_mutex_lock(&my->node->lock);
-          my->node->next_cpu = next_cpu;
-          pthread_mutex_unlock(&my->node->lock);
-
-          break;
+          break; // we can leave now
         }
       }
     }
 
-
+    
     if (!my->stolentasks) {
-      // there is no local probing we can steal
+      // there is no local work we can steal
       // is there global partitioning we can steal?
       node_t *nodes = my->env->nodes();				
-      int next_node = my->node->next_node;
+      int steal_node, next_node;
       for (int i = 0; i < my->env->nnodes(); i++) {
-        if (next_node == my->node_id) // skip my node
+        do {
+          steal_node = my->node->next_node;
+          next_node = (steal_node == my->env->nnodes() -1 ) ? 0 : steal_node + 1;
+        } while (!__sync_bool_compare_and_swap(&my->node->next_node, steal_node, next_node));
+
+        if (steal_node == my->node_id) // skip my node
           continue;
 
-        Tasklist *part_tasks = nodes[next_node].queue->GetListByType(OpPartition);
-        ++next_node;
-        if (next_node == my->env->nnodes())
-          next_node = 0;
+        // TODO: GLOBAL STEAL NOT IMPLEMENTED 
+        Tasklist *part_tasks = nodes[steal_node].queue->GetListByType(OpPartition);
 
         if (part_tasks) {
           my->stolentasks = part_tasks;
-          break;
+          break; // job stolen, we can leave now
         }
       }
-
-      pthread_mutex_lock(&my->node->lock);
-      my->node->next_node = next_node;
-      pthread_mutex_unlock(&my->node->lock);
     }
-
-    */
   }
 
 #if PER_CORE==1
