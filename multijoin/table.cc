@@ -157,6 +157,6 @@ Table::BuildTableFromRelation(relation_t *rel)
       table->AddPartition(p);
     }
   }
-
+  table->set_ready();
   return table;
 }

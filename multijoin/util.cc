@@ -109,7 +109,6 @@ void* alloc(size_t sz)
 {
   void* ptr = NULL;
   int retval = posix_memalign(&ptr, CACHE_LINE_SIZE, sz);
-  assert(retval == 0);
   return ptr;
 //  return numa_alloc_local(sz);
 }

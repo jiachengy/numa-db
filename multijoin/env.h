@@ -124,6 +124,7 @@ class Environment
 
   void Reset();
 
+  void TwoPassPartition(relation_t *relR);
   void TwoPassPartition(relation_t *relR, relation_t *relS);
   void RadixPartition(relation_t *rel);
 };

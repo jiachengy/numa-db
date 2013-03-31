@@ -9,15 +9,6 @@
 
 #define GET_REAL_IDX(KEY, OFFSET, IDX) ((KEY) | (IDX << OFFSET))
 
-
-// when a new output partition is generated
-// we dispatch it immediately
-// instead of add them to the queue in the end
-// because add them in the end is equivalent to 
-// setting a barrier
-
-// We add building and probing in the end
-// because of cache behavior
 void
 PartitionTask::DispatchNewPartition(Partition *p, thread_t *my)
 {
@@ -54,6 +45,11 @@ void PartitionTask::Finish(thread_t* my)
 
   // set output table to ready
   out_->set_ready();
+
+  if (out_->id() == my->env->output_table()->id()) {
+    my->env->set_done();
+    return;
+  }
 
   switch (out_->type()) {
   case OpNone: // Set termination flag
@@ -92,7 +88,6 @@ void PartitionTask::Run(thread_t *my)
 #if PERF_PARTITION == 1
   perf_reset(my->perf);
 #endif
-
   uint32_t mask = ((1 << nbits_) - 1) << offset_;
   uint32_t fanout = 1 << nbits_;
   uint32_t hist[fanout];
@@ -113,6 +108,7 @@ void PartitionTask::Run(thread_t *my)
     buffer_ids[idx] = buffer_id;
   }
 
+
   size_t ntuples_per_iter = Params::kBlockSize / sizeof(tuple_t);
 
   int iters = part_->size() / ntuples_per_iter;
@@ -131,7 +127,7 @@ void PartitionTask::Run(thread_t *my)
     // set output buffer
     for (uint32_t idx = 0; idx < fanout; idx++) {
       int buffer_id = buffer_ids[idx];
-      
+
       Partition *outp = out_->GetBuffer(my->node_id, buffer_id); // ALWAYS WRITE LOCAL
       
       tuple_t *out = NULL;
@@ -153,7 +149,6 @@ void PartitionTask::Run(thread_t *my)
 
       dst[idx] = out;
     }
-
     // second scan, partition and scatter
     for (uint32_t i = 0; i < ntuples_per_iter; i++) {
       uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
@@ -161,8 +156,6 @@ void PartitionTask::Run(thread_t *my)
       dst[idx]++;
     }
   }
-
-
 
   size_t remainder = part_->size() - iters * ntuples_per_iter;
   if (remainder) {

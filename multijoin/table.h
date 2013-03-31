@@ -59,11 +59,13 @@ class Partition {
   /* request space for ntuples */
   /* return NULL if no enough space */
   tuple_t* RequestSpace(size_t ntuples) {
+    pthread_mutex_lock(&mutex_);
     tuple_t *ptr = NULL;
     if ((Params::kPartitionSize / sizeof(tuple_t)) - size_ >= ntuples) {
       ptr = tuples_ + size_;
       size_ += ntuples;
     }
+    pthread_mutex_unlock(&mutex_);
     return ptr;
   }
 
@@ -134,7 +136,9 @@ class Table {
   list<Partition*>& GetPartitionsByKey(int key) { return pkeys_[key]; }
 
   Partition* GetBuffer(int node, int buffer_id) {return buffers_[node][buffer_id];}
-  void SetBuffer(int node, int buffer_id, Partition *buffer) {buffers_[node][buffer_id] = buffer;}
+  void SetBuffer(int node, int buffer_id, Partition *buffer) {
+    buffers_[node][buffer_id] = buffer;
+  }
 
   uint32_t nnodes() { return nnodes_; }
   uint32_t nkeys() { return nkeys_; }

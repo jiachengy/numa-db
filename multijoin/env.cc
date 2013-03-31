@@ -210,7 +210,7 @@ Environment::RadixPartition(relation_t *rel)
 
 
 void
-Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
+Environment::TwoPassPartition(relation_t *relR)
 {
   Table *rt = Table::BuildTableFromRelation(relR);
   rt->set_type(OpPartition);
@@ -223,25 +223,10 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
                               Params::kFanoutTotal,
                               Params::kFanoutTotal);
 
-  // Table *st = Table::BuildTableFromRelation(relS);
-  // st->set_type(OpPartition);
-
-  // Table *spass1tb = new Table(OpPartition, nnodes_,
-  //                            Params::kFanoutPass1,
-  //                            nthreads_ * Params::kFanoutPass1);
-
-  // Table *spass2tb = new Table(OpNone, nnodes_,
-  //                            Params::kFanoutPass1 * Params::kFanoutPass2,
-  //                            nthreads_ * Params::kFanoutPass1 * Params::kFanoutPass2);
-
-
   // Table Catelog
   AddTable(rt);
   AddTable(rpass1tb);
   AddTable(rpass2tb);
-  // AddTable(st);
-  // AddTable(spass1tb);
-  // AddTable(spass2tb);
 
   // Global accessible p2tasks
   P2Task ***p2tasksR = (P2Task***)malloc(sizeof(P2Task**) * nnodes_);
@@ -267,19 +252,97 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
 
     tasks_.push_back(rpass2tasks);
 
-    // Tasklist *spass1tasks = new Tasklist(st, spass1tb, ShareNode);
-    // Tasklist *spass2tasks = new Tasklist(spass1tb, spass2tb, ShareNode);
-    // tasks_.push_back(spass1tasks);
-    // tasks_.push_back(spass2tasks);
+    tq->AddList(rpass1tasks);
+    tq->AddList(rpass2tasks);
+    tq->Unblock(rpass1tasks->id());
+    tq->Unblock(rpass2tasks->id());
+
+    // create partition task from table R
+    list<Partition*>& pr = rt->GetPartitionsByNode(node);
+    for (list<Partition*>::iterator it = pr.begin(); 
+         it != pr.end(); it++) {
+      rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1, p2tasksR));
+    }
+  }
+}
+
+
+void
+Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
+{
+  Table *rt = Table::BuildTableFromRelation(relR);
+  rt->set_type(OpPartition);
+
+  Table *rpass1tb = new Table(OpPartition2, nnodes_,
+                              Params::kFanoutPass1,
+                              nthreads_per_node() * Params::kFanoutPass1);
+
+  Table *rpass2tb = new Table(OpBuild, nnodes_,
+                              Params::kFanoutTotal,
+                              Params::kFanoutTotal);
+
+  Table *st = Table::BuildTableFromRelation(relS);
+  st->set_type(OpPartition);
+
+  Table *spass1tb = new Table(OpPartition2, nnodes_,
+                              Params::kFanoutPass1,
+                              nthreads_per_node() * Params::kFanoutPass1);
+
+  Table *spass2tb = new Table(OpNone, nnodes_,
+                              Params::kFanoutTotal,
+                              Params::kFanoutTotal);
+
+
+  // Table Catelog
+  AddTable(rt);
+  AddTable(rpass1tb);
+  AddTable(rpass2tb);
+  AddTable(st);
+  AddTable(spass1tb);
+  AddTable(spass2tb);
+
+  // Global accessible p2tasks
+  P2Task ***p2tasksR = (P2Task***)malloc(sizeof(P2Task**) * nnodes_);
+  P2Task ***p2tasksS = (P2Task***)malloc(sizeof(P2Task**) * nnodes_);
+  for (uint32_t node = 0; node < nnodes_; ++node) {
+    P2Task **p2_tasks_on_nodeR = (P2Task**)malloc(sizeof(P2Task*) * Params::kFanoutPass1);
+    P2Task **p2_tasks_on_nodeS = (P2Task**)malloc(sizeof(P2Task*) * Params::kFanoutPass1);
+    for (int key = 0; key < Params::kFanoutPass1; ++key) {
+      p2_tasks_on_nodeR[key] = new P2Task(key, rpass1tb, rpass2tb);
+      p2_tasks_on_nodeS[key] = new P2Task(key, spass1tb, spass2tb);
+    }
+    p2tasksR[node] = p2_tasks_on_nodeR;
+    p2tasksS[node] = p2_tasks_on_nodeS;
+  }
+
+
+  for (uint32_t node = 0; node < nnodes_; node++) {
+    Taskqueue *tq = nodes_[node].queue;
+
+    Tasklist *rpass1tasks = new Tasklist(rt, rpass1tb, ShareNode);
+    Tasklist *rpass2tasks = new Tasklist(rpass1tb, rpass2tb, ShareNode);    
+    for (int key = 0; key < Params::kFanoutPass1; ++key) {
+      rpass2tasks->AddTask(p2tasksR[node][key]);
+    }
+    tasks_.push_back(rpass1tasks);
+    tasks_.push_back(rpass2tasks);
+
+    Tasklist *spass1tasks = new Tasklist(st, spass1tb, ShareNode);
+    Tasklist *spass2tasks = new Tasklist(spass1tb, spass2tb, ShareNode);
+    for (int key = 0; key < Params::kFanoutPass1; ++key) {
+      spass2tasks->AddTask(p2tasksS[node][key]);
+    }
+    tasks_.push_back(spass1tasks);
+    tasks_.push_back(spass2tasks);
 
     tq->AddList(rpass1tasks);
     tq->AddList(rpass2tasks);
-    // tq->AddList(spass1tasks);
-    // tq->AddList(spass2tasks);
+    tq->AddList(spass1tasks);
+    tq->AddList(spass2tasks);
     tq->Unblock(rpass1tasks->id());
     tq->Unblock(rpass2tasks->id());
-    // tq->Unblock(spass1tasks->id());
-    // tq->Unblock(spass2tasks->id());
+    tq->Unblock(spass1tasks->id());
+    tq->Unblock(spass2tasks->id());
 
     // create partition task from table R
     list<Partition*>& pr = rt->GetPartitionsByNode(node);
@@ -288,11 +351,11 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
       rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1, p2tasksR));
     }
 
-    // create partition task from table S
-    // list<Partition*>& ps = st->GetPartitionsByNode(node);
-    // for (list<Partition*>::iterator it = ps.begin(); 
-    //      it != ps.end(); it++) {
-    //   spass1tasks->AddTask(new PartitionTask(OpPartition, *it, Params::kOffsetPass2, Params::kNumBitsPass2));
-    // }
+    //    create partition task from table S
+    list<Partition*>& ps = st->GetPartitionsByNode(node);
+    for (list<Partition*>::iterator it = ps.begin(); 
+         it != ps.end(); it++) {
+      spass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1, p2tasksS));
+    }
   }
 }

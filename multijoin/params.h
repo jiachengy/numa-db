@@ -17,8 +17,8 @@ class Params
  public:
   static size_t kMaxHtTuples;
 
-  static const size_t kPartitionSize = 256 * 1024; // 256K
-  static const size_t kBlockSize = 1024 * 32; // 32KB
+  static const size_t kPartitionSize = 1024 * 1024; // 256K
+  static const size_t kBlockSize = 1024 * 256; // 32KB
 
   static const int kHtInflateRate = 1; // can only be 2^k
 

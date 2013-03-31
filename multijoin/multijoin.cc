@@ -90,7 +90,8 @@ void* work_thread(void *param)
     }
 
     assert(my->stolentasks == NULL);
-    
+
+    /*    
     if (!my->stolentasks) {
       // no bufferd task available
       // is there local pass2 partition / probe work we can steal?
@@ -138,6 +139,7 @@ void* work_thread(void *param)
         }
       }
     }
+    */
   }
 
 #if PER_CORE==1
