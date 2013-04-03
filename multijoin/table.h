@@ -2,9 +2,9 @@
 #define TABLE_H_
 
 #include <cstring>
+#include <vector>
 #include <list>
 #include <cassert>
-#include <glog/logging.h>
 #include <pthread.h>
 
 class Partition;
@@ -17,81 +17,26 @@ class Table;
 
 using namespace std;
 
-class Partition {
- private:
-  const int node_; // numa location
-  int key_; // partition key
+struct partition_t {
+  int node; // numa location
+  int radix; // partition key
 
-  bool done_; // indidate the partition has been processed
-  bool ready_; // indicate that the partiiton is ready to be processed
+  tuple_t * tuple;
+  size_t tuples;
+  uint64_t offset;
+  hashtable_t * hashtable;
 
-  tuple_t *tuples_;
-  size_t size_;
-  hashtable_t *hashtable_;
+  bool done; // indidate the partition has been processed
+  bool ready; // indicate that the partiiton is ready to be processed
 
-  pthread_mutex_t mutex_; // protect tuple place allocation
-
-  ShareLevel share_;
-
- public:
- Partition(int node, int key, ShareLevel share) 
-    : node_(node), key_(key),
-    done_(false), ready_(false),
-    tuples_(NULL), size_(0),
-    hashtable_(NULL), share_(share) {
-    pthread_mutex_init(&mutex_, NULL);
-  }
-  
-  ~Partition();
-
-  // Called only if recycler is not used
-  void Alloc();
-  void Dealloc();
-
-  void Acquire() {
-    pthread_mutex_lock(&mutex_);
-  }
-
-  void Release() {
-    pthread_mutex_unlock(&mutex_);
-  }
-
-  /* request space for ntuples */
-  /* return NULL if no enough space */
-  tuple_t* RequestSpace(size_t ntuples) {
-    pthread_mutex_lock(&mutex_);
-    tuple_t *ptr = NULL;
-    if ((Params::kPartitionSize / sizeof(tuple_t)) - size_ >= ntuples) {
-      ptr = tuples_ + size_;
-      size_ += ntuples;
-    }
-    pthread_mutex_unlock(&mutex_);
-    return ptr;
-  }
-
-
-  void Reset();
-  void Append(tuple_t tuple) { tuples_[size_++] = tuple; }
-
-  tuple_t* tuples() { return tuples_; }
-  void set_tuples(tuple_t *tuples) { tuples_ = tuples; }
-
-  size_t size() { return size_; }
-  void set_size(size_t sz) { size_ = sz; }
-
-  hashtable_t* hashtable() { return hashtable_; }
-  void set_hashtable(hashtable_t *ht) { hashtable_ = ht; }
-
-  int node() { return node_; }
-
-  int key() { return key_;}
-  void set_key(int key) { key_ = key;}
-	
-  bool ready() { return ready_; }
-  void set_ready() { ready_ = true; }
-  bool done() { return done_; }
-  void set_done() { done_ = true; }
+  ShareLevel share;
+  pthread_mutex_t mutex; // protect tuple place allocation
 };
+// __attribute__((aligned(CACHE_LINE_SIZE)));
+
+partition_t* partition_init(int node);
+void partition_destroy(partition_t * partition);
+void partition_reset(partition_t * partition);
 
 class Table {
  private:
@@ -101,10 +46,10 @@ class Table {
   const int id_;
   OpType type_;
 	
-  std::vector<std::list<Partition*> > pnodes_;
+  std::vector<std::list<partition_t*> > pnodes_;
   uint32_t nnodes_;
 
-  vector<list<Partition*> > pkeys_;
+  vector<list<partition_t*> > pkeys_;
   uint32_t nkeys_;
 	
   bool ready_;
@@ -114,8 +59,8 @@ class Table {
   uint32_t done_count_;
 
   // output buffer
-  size_t nbuffers_; 
-  vector<vector<Partition* > > buffers_;
+  //  size_t nbuffers_; 
+  //  vector<vector<partition_t* > > buffers_;
 
   // locking
   pthread_mutex_t mutex_;
@@ -126,23 +71,17 @@ class Table {
   // constructor for creating base table
   Table(uint32_t nnodes, uint32_t nkeys);
   // construtor for intermediate tables
-  Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers);
+  Table(OpType type, uint32_t nnodes, uint32_t nkeys /*, size_t nbuffers */);
   ~Table();
 
-  void AddPartition(Partition *p);
+  void AddPartition(partition_t *p);
   void Commit(int size = 1);
 
-  list<Partition*>& GetPartitionsByNode(int node) {return pnodes_[node];}
-  list<Partition*>& GetPartitionsByKey(int key) { return pkeys_[key]; }
-
-  Partition* GetBuffer(int node, int buffer_id) {return buffers_[node][buffer_id];}
-  void SetBuffer(int node, int buffer_id, Partition *buffer) {
-    buffers_[node][buffer_id] = buffer;
-  }
+  list<partition_t*>& GetPartitionsByNode(int node) {return pnodes_[node];}
+  list<partition_t*>& GetPartitionsByKey(int key) { return pkeys_[key]; }
 
   uint32_t nnodes() { return nnodes_; }
   uint32_t nkeys() { return nkeys_; }
-  int nbuffers() { return nbuffers_; }
   OpType type() { return type_; }
   void set_type(OpType type) { type_ = type;}
   int id() { return id_;}

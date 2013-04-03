@@ -4,50 +4,36 @@
 
 int Table::__autoid__ = 0;
 
-// NO memory release here
-Partition::~Partition()
+partition_t* partition_init(int node)
 {
-  if (tuples_) {
-    //    Dealloc();
-    tuples_ = NULL;
-  }
-
-  if (hashtable_) {
-    //    hashtable_free(hashtable_);
-    free(hashtable_); // just deallocate the hashtable_t
-    hashtable_ = NULL;
-  }
-
-  pthread_mutex_destroy(&mutex_);
+  partition_t * partition = (partition_t*)malloc(sizeof(partition_t));
+  partition->node = node;
+  partition->radix = -1;
+  partition->done = false;
+  partition->ready = false;
+  partition->tuple = NULL;
+  partition->tuples = 0;
+  partition->offset = -1;
+  partition->hashtable = NULL;
+  partition->share = ShareLocal;
+  pthread_mutex_init(&partition->mutex, NULL);
+  return partition;
+} 
+void partition_destroy(partition_t * partition)
+{
+  pthread_mutex_destroy(&partition->mutex);
 }
 
-void Partition::Alloc()
+void partition_reset(partition_t * partition)
 {
-  if (!tuples_) {
-    assert(get_running_node() == node_);
-    tuples_ = (tuple_t*)alloc(sizeof(tuple_t) * Params::kPartitionSize);
-    memset(tuples_, 0, sizeof(tuple_t) * Params::kPartitionSize);
-  }
-}
-
-void Partition::Dealloc()
-{
-  if (tuples_) {
-    dealloc(tuples_, sizeof(tuple_t) * Params::kPartitionSize);
-    tuples_ = NULL;
-  }
-}
-
-
-void Partition::Reset() { 	// used by the recycler
-  // node cannot be changed
-  key_ = -1;
-  done_ = false;
-  ready_ =false;
-  size_ = 0;
-
-  if (hashtable_)
-    hashtable_reset(hashtable_);
+  partition_t * p = partition;
+  p->radix = -1;
+  p->done = false;
+  p->ready = false;
+  p->tuple = NULL;
+  p->tuples = 0;
+  p->offset = -1;
+  p->hashtable = NULL;
 }
 
 
@@ -64,13 +50,13 @@ Table::Table(uint32_t nnodes, uint32_t nkeys)
   nnodes_ = nnodes;
   pnodes_.resize(nnodes);
 
-  nbuffers_ = 0;
+  //  nbuffers_ = 0;
 
   pthread_mutex_init(&mutex_, NULL);
 }
 
 
-Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers)
+Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys /*, size_t nbuffers */)
   : id_(__autoid__++), ready_(false), done_(false),
     nparts_(0), done_count_(0)
 {
@@ -83,21 +69,21 @@ Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys, size_t nbuffers)
   nnodes_ = nnodes;
   pnodes_.resize(nnodes);
 
-  nbuffers_ = nbuffers;
+  // nbuffers_ = nbuffers;
 
-  buffers_.resize(nnodes_);  
-  for (uint32_t node = 0; node < nnodes; ++node) {
-    for (uint32_t b = 0; b < nbuffers_; b++)
-      buffers_[node].push_back(NULL);
-  }
+  // buffers_.resize(nnodes_);  
+  // for (uint32_t node = 0; node < nnodes; ++node) {
+  //   for (uint32_t b = 0; b < nbuffers_; b++)
+  //     buffers_[node].push_back(NULL);
+  // }
 
   pthread_mutex_init(&mutex_, NULL);
 }
 
 Table::~Table() {
   for (uint32_t node = 0; node < nnodes_; ++node) {
-    list<Partition*> &pnode = pnodes_[node];
-    for (list<Partition*>::iterator it = pnode.begin();
+    list<partition_t*> &pnode = pnodes_[node];
+    for (list<partition_t*>::iterator it = pnode.begin();
          it != pnode.end(); ++it) {
       assert(*it != NULL);
       delete *it;
@@ -105,19 +91,17 @@ Table::~Table() {
   }
 }
 
-void Table::AddPartition(Partition *p)
+void Table::AddPartition(partition_t *p)
 {
   pthread_mutex_lock(&mutex_);
 
-  p->set_ready(); // p is read only now
-  pnodes_[p->node()].push_back(p);
-  if (nkeys_)
-    pkeys_[p->key()].push_back(p);
-  nparts_++;
+  //  p->set_ready(); // p is read only now
+  // p's set ready should be set by itself
 
-  tuple_t *tuple = p->tuples();
-  for (uint32_t i = 0; i < p->size(); i++)
-    assert(tuple[i].key != 0);
+  pnodes_[p->node].push_back(p);
+  if (nkeys_)
+    pkeys_[p->radix].push_back(p);
+  nparts_++;
  
   pthread_mutex_unlock(&mutex_);
 }
@@ -139,7 +123,9 @@ Table::BuildTableFromRelation(relation_t *rel)
 {
   Table *table = new Table(rel->nnodes, 0);
 
-  size_t ntuples_per_partition = Params::kPartitionSize / sizeof(tuple_t);
+  //  size_t ntuples_per_partition = Params::kPartitionSize / sizeof(tuple_t);
+  size_t ntuples_per_partition = rel->ntuples;
+
   for (uint32_t node = 0; node < rel->nnodes; ++node) {
     node_bind(node); // we ensure all the partition objects are allocated on that node
 
@@ -147,13 +133,12 @@ Table::BuildTableFromRelation(relation_t *rel)
     tuple_t *tuple = rel->tuples[node];
     while (ntuples > 0) {
       size_t psize = (ntuples > ntuples_per_partition) ? ntuples_per_partition : ntuples;
-      Partition *p = new Partition(node, 0, ShareLocal);
-      p->set_tuples(tuple);
-      p->set_size(psize);
-
+      partition_t *p = (partition_t*)partition_init(node);
+      p->tuple = tuple;
+      p->tuples = psize;
+      p->radix = 0; // to make the radix computation in partitioning easier
       tuple += psize;
       ntuples -= psize;
-
       table->AddPartition(p);
     }
   }

@@ -2,12 +2,11 @@
 #include <assert.h>
 #include <pthread.h>
 
+#include "params.h"
 #include "builder.h"
 #include "util.h"
 
 #define RAND_RANGE(N, STATE) (rand_next(STATE) % N)
-
-#define LOG(MSG, ...) { fprintf(stderr, ""MSG, ## __VA_ARGS__); }
 
 void
 knuth_shuffle(tuple_t *tuples, size_t ntuples, uint32_t seed)
@@ -102,6 +101,7 @@ build_fk_thread(void *params)
   relation_t *rel = arg->rel;
 
   cpu_bind(cpu);
+  cpu_membind(cpu);
 
   if (cpu == cpu_of_node(node, 0)) {
     size_t ntuples_on_node = arg->rel->ntuples_on_node[node];
@@ -143,6 +143,7 @@ build_pk_thread(void *params)
   relation_t *rel = arg->rel;
 
   cpu_bind(cpu);
+  cpu_membind(cpu);
 
   if (cpu == cpu_of_node(node, 0)) {
     size_t ntuples_on_node = arg->rel->ntuples_on_node[node];
@@ -229,6 +230,22 @@ parallel_build_relation_fk(const size_t ntuples, const int32_t maxid, const uint
   return rel;
 }
 
+relation_t *
+build_relation_pk(size_t ntuples)
+{
+  relation_t *rel = relation_init(1);
+  rel->ntuples = ntuples;
+
+  tuple_t * tuples = (tuple_t*)alloc(sizeof(tuple_t) * ntuples);
+  memset(tuples, 0, sizeof(tuple_t) * ntuples);
+  
+  random_unique_gen(tuples, ntuples);
+
+  rel->tuples[0] = tuples;
+
+  return rel;
+}
+
 
 relation_t *
 parallel_build_relation_pk(size_t ntuples, uint32_t nnodes, uint32_t nthreads)
@@ -240,12 +257,10 @@ parallel_build_relation_pk(size_t ntuples, uint32_t nnodes, uint32_t nthreads)
   assert(nthreads >= nnodes);
 
   rel->ntuples = ntuples;
-  rel->nnodes = nnodes;
 
   build_arg_t args[nthreads];
   pthread_t threads[nthreads];
   pthread_barrier_t barriers[nnodes];
-
 
   size_t ntuples_per_node = ntuples / nnodes;
   size_t ntuples_on_lastnode = ntuples - ntuples_per_node * (nnodes - 1);

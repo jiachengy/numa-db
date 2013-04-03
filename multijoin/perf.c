@@ -13,14 +13,18 @@ char *PERF_OUT;
 
 char const *DEFAULT_EVENTS[] = {
   "PAPI_TOT_CYC", /* total cpu cycles */
-  "PAPI_TOT_INS", /* total instructions completed */
-  "PAPI_L2_DCM",
-  "PAPI_L3_TCM", /* Data TLB misses */
-  //    "PAPI_TLB_DM", /* Data TLB misses */
+    "PAPI_TOT_INS", /* total instructions completed */
+  //  "PAPI_L1_ICM",
+   /* "PAPI_L1_DCM", */
+   /*   "PAPI_L2_DCM", */
+    "PAPI_L3_TCM", /* Data TLB misses */
+    "PAPI_TLB_DM", /* Data TLB misses */
   //  "DTLB_LOAD_MISSES:MISS_CAUSES_A_WALK",
   //  "DTLB_STORE_MISSES:MISS_CAUSES_A_WALK",
   //  "DTLB_STORE_MISSES",
-  //   "PAPI_BR_MSP", /* conditional branch mispredicted */
+  //    "PAPI_BR_MSP", /* conditional branch mispredicted */
+  /* "PAPI_LD_INS", */
+  /* "PAPI_SR_INS" */
 };
 
 int NUM_EVENTS = 0;

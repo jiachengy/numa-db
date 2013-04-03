@@ -3,26 +3,26 @@
 
 #include <unistd.h>
 
-#ifndef PRE_ALLOC
-#define PRE_ALLOC
-#endif
+#include "types.h"
 
-#ifndef CACHE_LINE_SIZE
+#define PARTITION_SIZE_MIN (1024 * 32) // 32K
+#define PARTITION_SIZE_Max (1024 * 256) // 256K
+
 #define CACHE_LINE_SIZE 64
-#endif
-
 
 class Params
 {
  public:
-  static size_t kMaxHtTuples;
+  //  static size_t kMaxHtTuples;
 
-  static const size_t kPartitionSize = 1024 * 1024; // 256K
-  static const size_t kBlockSize = 1024 * 256; // 32KB
+  static const size_t kPartitionSize = 512; // 256K
 
-  static const int kHtInflateRate = 1; // can only be 2^k
+  static const size_t kMaxTuples = kPartitionSize / sizeof(tuple_t);
+  static const int kTuplesPerCacheLine = CACHE_LINE_SIZE / sizeof(tuple_t);
 
-  static const int kNumRadixBits = 14;
+  //  static const int kHtInflateRate = 1; // can only be 2^k
+
+  static const int kNumRadixBits = 12;
   static const int kNumPasses = 2; 
 
   static const int kNumBitsPass1 = kNumRadixBits / kNumPasses;

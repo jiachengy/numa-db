@@ -1,7 +1,7 @@
 #ifndef HASHJOIN_H_
 #define HASHJOIN_H_
 
-#include "table.h" // Partition, Table
+#include "table.h" // partition_t, Table
 #include "types.h" // tuple_t, OpType
 #include "taskqueue.h" // Task
 #include "env.h" // thread_t
@@ -16,23 +16,28 @@ class PartitionTask : public Task
 {
  private:
   // Input partition
-  Partition *part_;
+  partition_t *part_;
 
   P2Task ***p2tasks_;
 
   // Parameters
-  int offset_; // cluster bits
-  int nbits_; // radix bits per pass
+  int shift_; // cluster bits
+  int bits_; // radix bits per pass
+  int fanout_;
+  int mask_;
 
   void Finish(thread_t *my);
-  void DispatchNewPartition(Partition *p, thread_t *my);
+  void DispatchNewPartition(partition_t *p, thread_t *my);
+  void DoPartition(thread_t *my);
   
  public:
- PartitionTask(Partition *part, int offset, int nbits, P2Task ***p2tasks) : Task(OpPartition) {
-    this->part_ = part;
-    this->offset_ = offset;
-    this->nbits_ = nbits;
-    this->p2tasks_ = p2tasks;
+ PartitionTask(partition_t *part, int shift, int bits, P2Task ***p2tasks) : Task(OpPartition) {
+    part_ = part;
+    shift_ = shift;
+    bits_ = bits;
+    fanout_ = 1 << bits;
+    mask_ = (fanout_-1) << shift_;
+    p2tasks_ = p2tasks;
   }
   
   virtual void Run(thread_t *my);
@@ -82,7 +87,7 @@ class BuildTask : public Task
   Table *probe_;
   Table *probe_out_;
 
-  void Finish(thread_t *my, Partition *htp);
+  void Finish(thread_t *my, partition_t *htp);
 
  public:
  BuildTask(OpType type, Table *probe, int key) : Task(type) {
@@ -113,7 +118,7 @@ class ProbeTask : public Task
 class UnitProbeTask : public Task
 {
  private:
-  Partition *part_;
+  partition_t *part_;
 
   Table *build_;
 
@@ -121,7 +126,7 @@ class UnitProbeTask : public Task
   void Finish(thread_t* my);
 
  public:
-  UnitProbeTask(OpType type, Partition *part,
+  UnitProbeTask(OpType type, partition_t *part,
            Table *build)
     : Task(type) {
     part_ = part;

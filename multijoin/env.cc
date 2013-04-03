@@ -7,13 +7,41 @@
 
 using namespace std;
 
-Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t memory_limit)
+buffer_t*
+buffer_init(int table, int radix, int partitions)
+{
+  buffer_t* buffer = (buffer_t*)malloc(sizeof(buffer_t));
+  buffer->table = table;
+  buffer->radix = radix;
+  buffer->partitions = partitions;
+  buffer->partition = (partition_t**)malloc(sizeof(partition_t*) * partitions);
+  memset(buffer->partition, 0x0, sizeof(partition_t*) * partitions);
+  return buffer;
+}
+
+
+void
+buffer_destroy(buffer_t *buffer)
+{
+  free(buffer->partition);
+  free(buffer);
+}
+
+
+bool
+buffer_compatible(buffer_t *buffer, int table, int radix)
+{
+  return (buffer && buffer->table == table && buffer->radix == radix);
+}
+
+
+Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t capacity)
   : nthreads_(nthreads), nnodes_(nnodes),
-    memlimit_(memory_limit), done_(false)
+    capacity_(capacity), done_(false)
 {
   nodes_ = (node_t*)malloc(sizeof(node_t) * nnodes_);
   threads_ = (thread_t*)malloc(sizeof(thread_t) * nthreads);
-  recyclers_ = (Recycler**)malloc(sizeof(Recycler*) * nnodes_);
+  memm_ = (Memory**)malloc(sizeof(Memory*) * nnodes_);
 
   uint32_t nthreads_per_node = nthreads / nnodes_;
   uint32_t nthreads_lastnode = nthreads - nthreads_per_node * (nnodes_ - 1);
@@ -29,9 +57,7 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t memory_limit
     pthread_mutex_init(&n->lock, NULL);
   }
 
-#ifdef PRE_ALLOC
   Init();
-#endif
   
   int tid = 0;
   for (uint32_t nid = 0; nid < nnodes_; ++nid) {
@@ -48,11 +74,13 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t memory_limit
       thread->localtasks = NULL;
       thread->stolentasks = NULL;
       thread->env = this;
+      thread->memm = memm_[nid];
 
       thread->local = 0;
       thread->shared = 0;
       thread->remote = 0;
-      thread->recycler = recyclers_[nid];
+
+      thread->buffer = NULL;
 
       node->groups[t] = thread;
     }
@@ -93,12 +121,12 @@ Environment::~Environment()
     free(nodes_[node].groups);
     pthread_mutex_destroy(&nodes_[node].lock);
 
-    delete recyclers_[node];
+    delete memm_[node];
   }
 
   free(threads_);
   free(nodes_);
-  free(recyclers_);
+  free(memm_);
   
   // deallocate tables
   int i = 0;
@@ -120,7 +148,7 @@ struct InitArg
 {
   int node;
   size_t capacity;
-  Recycler *recycler;
+  Memory *memm;
 };
 
 void*
@@ -129,7 +157,7 @@ Environment::init_thread(void *params)
   InitArg *args = (InitArg*)params;
   
   node_bind(args->node);
-  args->recycler = new Recycler(args->node, args->capacity);
+  args->memm = new Memory(args->node, args->capacity);
   
   return NULL;
 }
@@ -141,13 +169,13 @@ Environment::Init()
   InitArg args[nnodes_];
   for (uint32_t i = 0; i < nnodes_; i++) {
     args[i].node = i;
-    args[i].capacity = memlimit_;
+    args[i].capacity = capacity_;
     pthread_create(&threads[i], NULL, &Environment::init_thread, (void*)&args[i]);
   }
 
   for (uint32_t i = 0; i < nnodes_; i++) {
     pthread_join(threads[i], NULL);
-    recyclers_[i] = args[i].recycler;
+    memm_[i] = args[i].memm;
   }
 }
 
@@ -183,8 +211,7 @@ Environment::RadixPartition(relation_t *rel)
   rt->set_type(OpPartition);
 
   Table *pass1tb = new Table(OpNone, nnodes_,
-                             Params::kFanoutPass1,
-                             nthreads_per_node() * Params::kFanoutPass1);
+                             Params::kFanoutPass1);
 
   // Table Catelog
   AddTable(rt);
@@ -199,8 +226,8 @@ Environment::RadixPartition(relation_t *rel)
     tq->Unblock(pass1tasks->id());
 
     // create partition task from table R
-    list<Partition*>& pr = rt->GetPartitionsByNode(node);
-    for (list<Partition*>::iterator it = pr.begin(); 
+    list<partition_t*>& pr = rt->GetPartitionsByNode(node);
+    for (list<partition_t*>::iterator it = pr.begin(); 
          it != pr.end(); it++) {
       pass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1, NULL));
     }
@@ -215,13 +242,10 @@ Environment::TwoPassPartition(relation_t *relR)
   Table *rt = Table::BuildTableFromRelation(relR);
   rt->set_type(OpPartition);
 
-  Table *rpass1tb = new Table(OpPartition2, nnodes_,
-                              Params::kFanoutPass1,
-                              nthreads_per_node() * Params::kFanoutPass1);
+  Table *rpass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
 
-  Table *rpass2tb = new Table(OpNone, nnodes_,
-                              Params::kFanoutTotal,
-                              Params::kFanoutTotal);
+  Table *rpass2tb = new Table(OpNone, nnodes_, Params::kFanoutTotal);
+
 
   // Table Catelog
   AddTable(rt);
@@ -258,8 +282,8 @@ Environment::TwoPassPartition(relation_t *relR)
     tq->Unblock(rpass2tasks->id());
 
     // create partition task from table R
-    list<Partition*>& pr = rt->GetPartitionsByNode(node);
-    for (list<Partition*>::iterator it = pr.begin(); 
+    list<partition_t*>& pr = rt->GetPartitionsByNode(node);
+    for (list<partition_t*>::iterator it = pr.begin(); 
          it != pr.end(); it++) {
       rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1, p2tasksR));
     }
@@ -273,24 +297,18 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
   Table *rt = Table::BuildTableFromRelation(relR);
   rt->set_type(OpPartition);
 
-  Table *rpass1tb = new Table(OpPartition2, nnodes_,
-                              Params::kFanoutPass1,
-                              nthreads_per_node() * Params::kFanoutPass1);
+  Table *rpass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
 
-  Table *rpass2tb = new Table(OpBuild, nnodes_,
-                              Params::kFanoutTotal,
-                              Params::kFanoutTotal);
+
+  Table *rpass2tb = new Table(OpBuild, nnodes_, Params::kFanoutTotal);
+
 
   Table *st = Table::BuildTableFromRelation(relS);
   st->set_type(OpPartition);
 
-  Table *spass1tb = new Table(OpPartition2, nnodes_,
-                              Params::kFanoutPass1,
-                              nthreads_per_node() * Params::kFanoutPass1);
+  Table *spass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
 
-  Table *spass2tb = new Table(OpNone, nnodes_,
-                              Params::kFanoutTotal,
-                              Params::kFanoutTotal);
+  Table *spass2tb = new Table(OpNone, nnodes_, Params::kFanoutTotal);
 
 
   // Table Catelog
@@ -345,15 +363,15 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
     tq->Unblock(spass2tasks->id());
 
     // create partition task from table R
-    list<Partition*>& pr = rt->GetPartitionsByNode(node);
-    for (list<Partition*>::iterator it = pr.begin(); 
+    list<partition_t*>& pr = rt->GetPartitionsByNode(node);
+    for (list<partition_t*>::iterator it = pr.begin(); 
          it != pr.end(); it++) {
       rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1, p2tasksR));
     }
 
     //    create partition task from table S
-    list<Partition*>& ps = st->GetPartitionsByNode(node);
-    for (list<Partition*>::iterator it = ps.begin(); 
+    list<partition_t*>& ps = st->GetPartitionsByNode(node);
+    for (list<partition_t*>::iterator it = ps.begin(); 
          it != ps.end(); it++) {
       spass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1, p2tasksS));
     }

@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <numa.h>
 
+#include "table.h"
 #include "types.h"
 #include "taskqueue.h"
 #include "util.h"
@@ -91,7 +92,6 @@ void* work_thread(void *param)
 
     assert(my->stolentasks == NULL);
 
-    /*    
     if (!my->stolentasks) {
       // no bufferd task available
       // is there local pass2 partition / probe work we can steal?
@@ -139,7 +139,6 @@ void* work_thread(void *param)
         }
       }
     }
-    */
   }
 
 #if PER_CORE==1
@@ -147,7 +146,7 @@ void* work_thread(void *param)
 #if PERF_ALL == 1
   perf_read(my->perf);
 #endif
-  //  perf_destroy(my->perf);
+  perf_destroy(my->perf);
   perf_unregister_thread();
 #endif
   return NULL;
@@ -189,8 +188,6 @@ void Run(Environment *env)
 #if PER_CORE == 1
   thread_t *args = env->threads();
   for (int i = 0; i < env->nthreads(); i++) {
-    //    cout << "Thread " << i << ":" << endl;
-    //    perf_print(args[i].perf);
     if (i != 0) 
       perf_aggregate(args[0].perf, args[i].perf);
   }
@@ -207,59 +204,38 @@ void Run(Environment *env)
          << infos[i].remote << endl;
   }
 
-  LOG(INFO) << "Running time: " << t << " msec";
+  logging("Running time: %ld msec\n", t);
 
-  LOG(INFO) << "All threads join.";
+  logging("All threads join.\n");
 
   Table *tb = env->GetTable(0);
   long long sum = 0;
   for (uint32_t node = 0; node < tb->nnodes(); ++node) {
-    list<Partition*> &ps = tb->GetPartitionsByNode(node);
+    list<partition_t*> &ps = tb->GetPartitionsByNode(node);
     size_t size = 0;
-    for (list<Partition*>::iterator it = ps.begin();
+    for (list<partition_t*>::iterator it = ps.begin();
          it != ps.end(); ++it) {
-      size += (*it)->size();
-      tuple_t *tuple = (*it)->tuples();
-      for (uint32_t i = 0; i < (*it)->size(); i++) {
+      size += (*it)->tuples;
+      tuple_t *tuple = (*it)->tuple;
+      for (uint32_t i = 0; i < (*it)->tuples; i++) {
         sum += tuple[i].key;
       }
     }
   }
-  LOG(INFO) << "sum 0: " << sum;
   
   tb = env->GetTable(1);
   long long sum1 = 0;
   for (uint32_t key = 0; key < tb->nkeys(); key++) {
-    list<Partition*> &ps = tb->GetPartitionsByKey(key);
+    list<partition_t*> &ps = tb->GetPartitionsByKey(key);
     size_t size = 0;
-    for (list<Partition*>::iterator it = ps.begin();
+    for (list<partition_t*>::iterator it = ps.begin();
          it != ps.end(); ++it) {
-      size += (*it)->size();
-      tuple_t *tuple = (*it)->tuples();
-      for (uint32_t i = 0; i < (*it)->size(); i++) {
+      size += (*it)->tuples;
+      tuple_t *tuple = (*it)->tuple;;
+      for (uint32_t i = 0; i < (*it)->tuples; i++) {
         sum1 += tuple[i].key;
       }
     }
-    // LOG(INFO) << "part " << key << " size: " << size;
   }
-  LOG(INFO) << "sum 1: " << sum1;
   assert(sum1 == sum);
-
-  
-  tb = env->GetTable(2);
-  long long sum2= 0;
-  for (uint32_t key = 0; key < tb->nkeys(); key++) {
-    list<Partition*> &ps = tb->GetPartitionsByKey(key);
-    size_t size = 0;
-    for (list<Partition*>::iterator it = ps.begin();
-         it != ps.end(); ++it) {
-      size += (*it)->size();
-      tuple_t *tuple = (*it)->tuples();
-      for (uint32_t i = 0; i < (*it)->size(); i++)
-        sum2 += tuple[i].key;
-    }
-       // LOG(INFO) << "part " << key << " size: " << size;
-  }
-  LOG(INFO) << "sum 2: " << sum2;
-  assert(sum2 == sum);
 }

@@ -12,6 +12,11 @@ struct tuple_t {
   value_t  payload;
 };
 
+typedef struct {
+  uint64_t data[8];
+} cache_line_t;
+
+
 enum OpType {
   OpNone,
   OpPartition,

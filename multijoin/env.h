@@ -11,10 +11,23 @@ typedef struct thread_t thread_t;
 
 #include "taskqueue.h"
 #include "table.h"
-#include "recycler.h"
+#include "memory.h"
 #include "builder.h"
 
 #include "perf.h"
+
+struct buffer_t {
+  int table;
+  int radix;
+  
+  partition_t **partition;
+  int partitions;
+};
+
+buffer_t* buffer_init(int table, int key, int partitions);
+void buffer_destroy(buffer_t *buffer);
+bool buffer_compatible(buffer_t *buffer, int table, int radix);
+
 
 struct node_t {
   int node_id;
@@ -46,7 +59,10 @@ struct thread_t {
 
   node_t *node; // pointer to local node info
   Environment *env; // pointer to global info
-  Recycler *recycler; // memory recycler
+  Memory *memm; // memory manager
+
+  /* local buffer */
+  buffer_t *buffer;
 
   // counters
   uint32_t local;
@@ -68,12 +84,12 @@ class Environment
   // general info
   const size_t nthreads_;
   const size_t nnodes_;
-  const size_t memlimit_;
+  const size_t capacity_;
 
   // node and thread info
   node_t *nodes_; // all nodes structure
   thread_t *threads_;
-  Recycler **recyclers_;
+  Memory **memm_;
 
   // table info
   vector<Table*> tables_;	

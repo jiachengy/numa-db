@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <pthread.h>
@@ -29,6 +30,20 @@ int cpu_of_thread_rr(int tid)
   int index = tid / 4;
   return cores[node][index];
 }
+
+#ifdef DEBUG
+void
+logging(const char * format, ...)
+{
+  va_list args;
+  va_start(args, format);
+  fprintf(stderr, "[DEBUG]:");
+  vfprintf(stderr, format, args);
+  va_end(args);
+}
+#else
+void logging(const char * format, ...) {}
+#endif
 
 
 uint32_t cpus(void)
@@ -104,13 +119,29 @@ int cpu_of_node(int node, int idx)
   return cores[node][idx];
 }
 
+void* alloc_aligned(size_t sz, uint64_t align)
+{
+  void* ptr;
+  int retval;
+  retval = posix_memalign((void**)&ptr, align, sz);
+
+  assert(retval == 0);
+
+  return ptr;
+}
+
 
 void* alloc(size_t sz)
 {
-  void* ptr = NULL;
-  int retval = posix_memalign(&ptr, CACHE_LINE_SIZE, sz);
+ // return numa_alloc_local(sz);
+ 
+  void* ptr;
+  int retval;
+  retval = posix_memalign((void**)&ptr, CACHE_LINE_SIZE, sz);
+
+  assert(retval == 0);
+
   return ptr;
-//  return numa_alloc_local(sz);
 }
 
 // be careful when used in global thread
@@ -128,7 +159,7 @@ void* alloc_interleaved(size_t sz)
 void dealloc(void *p, size_t sz)
 {
   free(p);
-  //  numa_free(p, sz);
+   // numa_free(p, sz);
 }
 
 uint64_t micro_time(void)
@@ -178,4 +209,17 @@ uint32_t rand_next(rand_state_t *state)
   y ^= (y << 15) & 0xefc60000;
   y ^= (y >> 18);
   return y;
+}
+
+
+int log_2(uint64_t x)
+{
+	int p = 0;
+	while ((((uint64_t) 1) << p) < x) p++;
+	return p;
+}
+
+int power_of_2(uint64_t x)
+{
+	return x && (x & (x - 1)) == 0;
 }

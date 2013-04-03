@@ -15,7 +15,7 @@ hashtable_t *hashtable_init(int ntuples)
 {
   uint32_t nbuckets = ntuples;
   NEXT_POW_2(nbuckets);
-  nbuckets = nbuckets * Params::kHtInflateRate;
+  nbuckets = nbuckets;
 
   hashtable_t *ht = (hashtable_t*)malloc(sizeof(hashtable_t));
   ht->next   = (entry_t*)alloc(sizeof(entry_t) * ntuples);
@@ -32,7 +32,7 @@ hashtable_t *hashtable_init(int ntuples)
 
 hashtable_t *hashtable_init_noalloc(int ntuples)
 {
-  int nbuckets = (int)(ntuples * Params::kHtInflateRate);
+  int nbuckets = (int)(ntuples);
   hashtable_t *ht = (hashtable_t*)malloc(sizeof(hashtable_t));
   
   ht->nbuckets = nbuckets;

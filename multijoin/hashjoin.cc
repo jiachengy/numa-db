@@ -1,16 +1,151 @@
-#include <glog/logging.h>
+#include <smmintrin.h>
 
 #include "params.h"
 #include "hashjoin.h"
 
 #include "perf.h"
 
-#define HASH_BIT_MODULO(K, MASK, NBITS) (((K) & MASK) >> NBITS)
+inline uint32_t encode_radix(uint32_t low, uint32_t high, int offset)
+{
+  return low | (high << offset);
+}
 
-#define GET_REAL_IDX(KEY, OFFSET, IDX) ((KEY) | (IDX << OFFSET))
+inline uint32_t mhash(uint32_t key, uint32_t mask, int shift)
+{
+  return (key & mask) >> shift;
+}
 
 void
-PartitionTask::DispatchNewPartition(Partition *p, thread_t *my)
+PartitionTask::DoPartition(thread_t *my)
+{
+  tuple_t *output = my->memm->baseptr();
+  partition_t * inp = part_;
+
+  int shift = shift_;
+  int fanout = fanout_;
+  int mask = mask_;
+
+  uint64_t block_mask = Params::kMaxTuples - 1;
+
+  // request the buffer
+  buffer_t *bufferpool = my->buffer;
+  // check buffer compatibility
+  if (!buffer_compatible(bufferpool, out_->id(), inp->radix)) {
+    // flush old buffers
+    if (bufferpool) {
+      partition_t **buffer = bufferpool->partition;
+      for (int i = 0; i != bufferpool->partitions; ++i) {
+        buffer[i]->ready = true;
+        DispatchNewPartition(buffer[i], my);
+        out_->AddPartition(buffer[i]);
+      }
+    }
+    bufferpool = buffer_init(out_->id(), inp->radix, fanout);
+  }
+  partition_t **buffer = bufferpool->partition;
+
+  // initialize the output with initial buffer
+  for (int i = 0; i != fanout; ++i) {
+    // leave enough room for alignment
+    if (buffer[i] == NULL ||
+        buffer[i]->tuples + Params::kTuplesPerCacheLine > Params::kMaxTuples) {
+      buffer[i] = my->memm->GetPartition();
+      buffer[i]->radix = encode_radix(inp->radix, i, shift);
+    }
+  }
+
+  tuple_t *tuple_end = &inp->tuple[inp->tuples];
+  tuple_t *tuple_ptr = inp->tuple;
+
+  // one cache line per partition
+  cache_line_t *wc_buf = (cache_line_t*)alloc(fanout * sizeof(cache_line_t));
+  uint32_t *wc_count = (uint32_t*)calloc(fanout, sizeof(uint32_t));
+  tuple_t **part = (tuple_t**)malloc(fanout * sizeof(tuple_t*));
+
+  for (int i = 0; i != fanout; ++i)
+    part[i] = &buffer[i]->tuple[buffer[i]->tuples];
+
+  // cache line alignment
+  int i = fanout;
+  // notice that if a output buffer does not have room
+  // for 7 elements, we created a new buffer instead
+  do {
+    tuple_t row = *tuple_ptr++;
+    uint32_t hash = mhash(row.key, mask, shift);
+    *part[hash]++ = row;
+    if (++wc_count[hash] == 7 && !--i) break;
+  } while (tuple_ptr != tuple_end);
+  // copy data to buffers and ensure cache-line aligned writes
+  for (int i = 0 ; i != fanout ; ++i) {
+    uint64_t o, off = part[i] - output;
+    wc_buf[i].data[7] = off;
+    off &= 7;
+    for (o = 0 ; o != off ; ++o)
+      wc_buf[i].data[o] = ((uint64_t*)part[i])[o - off];
+  }
+
+  // software write combining on page blocks
+  do {
+    // read and hash row
+    tuple_t row = *tuple_ptr;
+    uint32_t hash = mhash(row.key, mask, shift);
+    // offset in the cache line pair
+    uint64_t index = wc_buf[hash].data[7]++;
+    uint64_t mod_index = index & 7;
+    // write in wc buffer
+    wc_buf[hash].data[mod_index] = *(uint64_t*)tuple_ptr; // row; casting the tuple to 64bit
+    // cache line is full
+    if (mod_index == 7) {
+      // use 128-bit registers by default
+      __m128i *src = (__m128i*) wc_buf[hash].data;
+      __m128i *dest = (__m128i*) &output[index - 7];
+      // load cache line from cache to 4 registers
+      __m128i r0 = _mm_load_si128(&src[0]);
+      __m128i r1 = _mm_load_si128(&src[1]);
+      __m128i r2 = _mm_load_si128(&src[2]);
+      __m128i r3 = _mm_load_si128(&src[3]);
+      // store cache line from registers to memory
+      _mm_stream_si128(&dest[0], r0);
+      _mm_stream_si128(&dest[1], r1);
+      _mm_stream_si128(&dest[2], r2);
+      _mm_stream_si128(&dest[3], r3);
+      // restore overwritten pointer
+      wc_buf[hash].data[7] = index + 1;
+      // check for end of buffer
+      if (((index + 1) & block_mask) == 0) {
+        partition_t *full = buffer[hash];
+        full->tuples = Params::kMaxTuples;
+        full->ready = true;
+
+        DispatchNewPartition(full, my);
+        out_->AddPartition(full);
+
+        partition_t *empty = my->memm->GetPartition();
+        empty->radix = encode_radix(inp->radix, hash, shift);
+        wc_buf[hash].data[7] = empty->offset;
+        buffer[hash] = empty;
+      }
+    }
+  } while (++tuple_ptr != tuple_end);
+  // send remaining items from buffers to output
+  for (int i = 0 ; i != fanout ; ++i) {
+    uint64_t index = wc_buf[i].data[7];
+    part[i] = &output[index];
+    int p = index & 7;
+    for (int j = 0 ; j != p ; ++j)
+      ((uint64_t*)part[i])[j - p] = wc_buf[i].data[j];
+    
+    buffer[i]->tuples = (index & block_mask); // set the new size
+  }
+
+  free(wc_count);
+  free(wc_buf);
+  free(part);
+}
+
+
+void
+PartitionTask::DispatchNewPartition(partition_t *p, thread_t *my)
 {
   if (out_->type() != OpPartition2)
     return;
@@ -20,7 +155,7 @@ PartitionTask::DispatchNewPartition(Partition *p, thread_t *my)
   /* Here is a special add task */
   /* You have to get the inner level task list of this key */
   
-  P2Task *p2task = p2tasks_[p->node()][p->key()];
+  P2Task *p2task = p2tasks_[p->node][p->radix];
   p2task->AddSubTask(newtask);
 }
 
@@ -32,14 +167,18 @@ void PartitionTask::Finish(thread_t* my)
   if (!in_->done())
     return;
 
-  // Finish all remaining buffered partitions
-  for (int node = 0; node < my->env->nnodes(); ++node) {
-    for (int i = 0; i < out_->nbuffers(); i++) {
-      Partition *outp = out_->GetBuffer(node, i);
-      if (outp) {
-        DispatchNewPartition(outp, my);
-        out_->AddPartition(outp);
+  // force flush
+  thread_t * thread = my->env->threads();
+  for (int tid = 0; tid != my->env->nthreads(); ++tid) {
+    buffer_t *buffer = thread[tid].buffer; // NEED a latch to do this work
+    // force flush all remaining buffers
+    if (buffer && buffer->table == out_->id()) {
+      for (int i = 0; i < buffer->partitions; i++) {
+        out_->AddPartition(buffer->partition[i]);
+        DispatchNewPartition(buffer->partition[i], my);
       }
+      buffer_destroy(buffer);
+      thread[tid].buffer = NULL; 
     }
   }
 
@@ -65,8 +204,8 @@ void PartitionTask::Finish(thread_t* my)
       for (int key = 0; key < Params::kFanoutPass1; key++) {
         Tasklist *probelist = my->env->probes()[key];
 
-        list<Partition*> &parts = out_->GetPartitionsByKey(key);
-        for (list<Partition*>::iterator it = parts.begin();
+        list<partition_t*> &parts = out_->GetPartitionsByKey(key);
+        for (list<partition_t*>::iterator it = parts.begin();
              it != parts.end(); it++) {
           Task *task = new UnitProbeTask(OpUnitProbe, *it, my->env->build_table());
           probelist->AddTask(task);
@@ -85,133 +224,11 @@ void PartitionTask::Finish(thread_t* my)
 
 void PartitionTask::Run(thread_t *my)
 {
-#if PERF_PARTITION == 1
-  perf_reset(my->perf);
-#endif
-  uint32_t mask = ((1 << nbits_) - 1) << offset_;
-  uint32_t fanout = 1 << nbits_;
-  uint32_t hist[fanout];
-  tuple_t *dst[fanout];
-  int buffer_ids[fanout];
-
-  for (uint32_t idx = 0; idx < fanout; ++idx) {
-    uint32_t realid = GET_REAL_IDX(part_->key(), offset_, idx);
-    // for PASS 1, we give every thread its own buffers    
-    
-    // BE CAREFUL, THE TID HERE MEANS ID ON THAT NODE
-    int buffer_id;
-    if (offset_ == 0)
-      buffer_id = Params::kFanoutPass1 * my->tid_of_node + realid;
-    else
-      buffer_id = realid;
-    
-    buffer_ids[idx] = buffer_id;
-  }
-
-
-  size_t ntuples_per_iter = Params::kBlockSize / sizeof(tuple_t);
-
-  int iters = part_->size() / ntuples_per_iter;
-
-  tuple_t *tuple = part_->tuples();
-  for (int iter = 0; iter < iters; ++iter, tuple += ntuples_per_iter) {
-    // reset histogram
-    memset(hist, 0, fanout * sizeof(uint32_t));
-  
-    // first scan: set histogram
-    for (uint32_t i = 0; i < ntuples_per_iter; i++) {
-      uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
-      hist[idx]++;
-    }
-
-    // set output buffer
-    for (uint32_t idx = 0; idx < fanout; idx++) {
-      int buffer_id = buffer_ids[idx];
-
-      Partition *outp = out_->GetBuffer(my->node_id, buffer_id); // ALWAYS WRITE LOCAL
-      
-      tuple_t *out = NULL;
-      // if buffer does not exists,  or if not enough space
-      if (!outp || (out=outp->RequestSpace(hist[idx])) == NULL ) {
-        //  if the buffer is full
-        if (outp) {
-          DispatchNewPartition(outp, my);
-          out_->AddPartition(outp);
-        }
-
-        Partition *np = my->recycler->GetEmptyPartition();
-        np->set_key(GET_REAL_IDX(part_->key(), offset_, idx));
-
-        out_->SetBuffer(part_->node(), buffer_id, np);
-        outp = np;
-        out = outp->RequestSpace(hist[idx]);
-      }
-
-      dst[idx] = out;
-    }
-    // second scan, partition and scatter
-    for (uint32_t i = 0; i < ntuples_per_iter; i++) {
-      uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
-      *dst[idx] = tuple[i];
-      dst[idx]++;
-    }
-  }
-
-  size_t remainder = part_->size() - iters * ntuples_per_iter;
-  if (remainder) {
-    tuple = part_->tuples() + iters * ntuples_per_iter;  
-
-    // reset histogram
-    memset(hist, 0, fanout * sizeof(uint32_t));
-
-    // first scan: set histogram
-    for (uint32_t i = 0; i < remainder; i++) {
-      uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
-      hist[idx]++;
-    }
-
-    // set output buffer
-    for (uint32_t idx = 0; idx < fanout; idx++) {
-      int buffer_id = buffer_ids[idx];
-      Partition *outp = out_->GetBuffer(my->node_id, buffer_id); // ALWAYS WRITE LOCAL
-
-      tuple_t *out;
-      // if buffer does not exists,  or if not enough space
-      if (!outp || (out=outp->RequestSpace(hist[idx])) == NULL) {
-        //  if the buffer is full
-        if (outp) {
-          DispatchNewPartition(outp, my);
-          out_->AddPartition(outp);
-        }
-
-        Partition *np = my->recycler->GetEmptyPartition();
-        np->set_key(GET_REAL_IDX(part_->key(), offset_, idx));
-
-        out_->SetBuffer(my->node_id, buffer_id, np);
-        outp = np;
-        out = outp->RequestSpace(hist[idx]);
-      }
-
-      dst[idx] = out;
-    }
-
-    // second scan, partition and scatter
-    for (uint32_t i = 0; i < remainder; i++) {
-      uint32_t idx = HASH_BIT_MODULO(tuple[i].key, mask, offset_);
-      *dst[idx] = tuple[i];
-      dst[idx]++;
-    }
-  }
-
+  DoPartition(my);
   Finish(my);
-
-#if PERF_PARTITION == 1
-  perf_accum(my->perf);
-#endif
-
 }
 
-void BuildTask::Finish(thread_t* my, Partition *htp)
+void BuildTask::Finish(thread_t* my, partition_t *htp)
 {
   // hash table partition
   out_->AddPartition(htp);
@@ -246,24 +263,14 @@ void BuildTask::Finish(thread_t* my, Partition *htp)
 void BuildTask::Run(thread_t *my)
 {
   uint32_t ntuples = 0;
-  list<Partition*> &parts = in_->GetPartitionsByKey(key_);
-  for (list<Partition*>::iterator it = parts.begin();
+  list<partition_t*> &parts = in_->GetPartitionsByKey(key_);
+  for (list<partition_t*>::iterator it = parts.begin();
        it != parts.end(); it++)
-    ntuples += (*it)->size();
+    ntuples += (*it)->tuples;
 
-  if (ntuples >= Params::kMaxHtTuples)
-    LOG(INFO) << ntuples;
-  assert(ntuples < Params::kMaxHtTuples);
-
-#ifdef PRE_ALLOC
-  Partition *htp = my->recycler->GetEmptyHT();
-  hashtable_t *ht = htp->hashtable();
-  htp->set_key(key_);
-#else
-  Partition *htp = new Partition(my->node_id, key_);
-  hashtable_t *ht = hashtable_init(ntuples);
-  htp->set_hashtable(ht);
-#endif
+  partition_t *htp = my->memm->GetPartition();
+  hashtable_t *ht = htp->hashtable;
+  htp->radix = key_;
 
   int *bucket = ht->bucket;
   entry_t *next = ht->next;
@@ -271,13 +278,13 @@ void BuildTask::Run(thread_t *my)
 
   // Begin to build the hash table
   uint32_t i = 0;
-  for (list<Partition*>::iterator it = parts.begin();
+  for (list<partition_t*>::iterator it = parts.begin();
        it != parts.end(); ++it) {
 
-    tuple_t *tuple = (*it)->tuples();
+    tuple_t *tuple = (*it)->tuple;
 
-    for (uint32_t j = 0; j < (*it)->size(); j++) {
-      uint32_t idx = HASH_BIT_MODULO(tuple->key, MASK, Params::kNumRadixBits);
+    for (uint32_t j = 0; j < (*it)->tuples; j++) {
+      uint32_t idx = mhash(tuple->key, MASK, Params::kNumRadixBits);
       next[i].next = bucket[idx];
       next[i].tuple = *tuple;
 
@@ -370,13 +377,13 @@ void UnitProbeTask::Finish(thread_t* my)
     return;
 
   // Finish all remaining buffered partitions
-  for (int node = 0; node < my->env->nnodes(); node++) {
-    for (int i = 0; i < out_->nbuffers(); i++) {
-      Partition *outp = out_->GetBuffer(node, i);
-      if (outp)
-        out_->AddPartition(outp);
-    }
-  }
+  // for (int node = 0; node < my->env->nnodes(); node++) {
+  //   for (int i = 0; i < out_->nbuffers(); i++) {
+  //     partition_t *outp = out_->GetBuffer(node, i);
+  //     if (outp)
+  //       out_->AddPartition(outp);
+  //   }
+  // }
 
   // set output table to ready
   out_->set_ready();
