@@ -46,7 +46,7 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t capacity)
   uint32_t nthreads_per_node = nthreads / nnodes_;
   uint32_t nthreads_lastnode = nthreads - nthreads_per_node * (nnodes_ - 1);
 
-  for (uint32_t node = 0; node < nnodes_; node++) {
+  for (uint32_t node = 0; node != nnodes_; ++node) {
     node_t *n = &nodes_[node];
     n->node_id = node;
     n->nthreads = (node == nnodes_ - 1) ? nthreads_lastnode : nthreads_per_node;
@@ -243,9 +243,7 @@ Environment::TwoPassPartition(relation_t *relR)
   rt->set_type(OpPartition);
 
   Table *rpass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
-
   Table *rpass2tb = new Table(OpNone, nnodes_, Params::kFanoutTotal);
-
 
   // Table Catelog
   AddTable(rt);
@@ -254,7 +252,7 @@ Environment::TwoPassPartition(relation_t *relR)
 
   // Global accessible p2tasks
   P2Task ***p2tasksR = (P2Task***)malloc(sizeof(P2Task**) * nnodes_);
-  for (uint32_t node = 0; node < nnodes_; ++node) {
+  for (uint32_t node = 0; node != nnodes_; ++node) {
     P2Task **p2_tasks_on_node = (P2Task**)malloc(sizeof(P2Task*) * Params::kFanoutPass1);
     for (int key = 0; key < Params::kFanoutPass1; ++key) {
       p2_tasks_on_node[key] = new P2Task(key, rpass1tb, rpass2tb);
@@ -283,6 +281,7 @@ Environment::TwoPassPartition(relation_t *relR)
 
     // create partition task from table R
     list<partition_t*>& pr = rt->GetPartitionsByNode(node);
+    logging("Partitions on node[%d]: %d\n", node, pr.size());
     for (list<partition_t*>::iterator it = pr.begin(); 
          it != pr.end(); it++) {
       rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1, p2tasksR));

@@ -1,6 +1,6 @@
 CC=g++
 DEFINES=-DDEBUG -DUSE_PERF
-CFLAGS=-pthread -Wall -msse4 -g -O3
+CFLAGS=-pthread -Wall -msse4 -g
 LIBS=-lpthread -lnuma -lpapi
 
 all : *.cc

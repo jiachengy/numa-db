@@ -15,13 +15,14 @@ int main(int argc, char *argv[])
 #ifdef USE_PERF
   perf_lib_init(NULL, NULL);
 #endif
-
+  int nodes = 1;
   int nthreads = 1;
 
   if (argc > 1)
     nthreads = atoi(argv[1]);
-
-
+  if (argc > 2)
+    nodes = atoi(argv[2]);
+  
   size_t rsize = 1024 * 1024 * 16; // 128M
   //  size_t ssize = 128 * 1024 * 1024; // 128M
 
@@ -30,7 +31,7 @@ int main(int argc, char *argv[])
   logging("Building table with %ld tuples done.\n", rsize);
 
   size_t capacity = rsize * 8;
-  Environment *env = new Environment(1, nthreads, capacity);
+  Environment *env = new Environment(nodes, nthreads * nodes, capacity);
 
   logging("Environment initialized.\n");
 

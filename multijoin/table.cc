@@ -121,19 +121,20 @@ void Table::Commit(int size)
 Table*
 Table::BuildTableFromRelation(relation_t *rel)
 {
-  Table *table = new Table(rel->nnodes, 0);
+  Table *table = new Table(num_numa_nodes(), 0);
 
-   size_t ntuples_per_partition = Params::kMaxTuples;
+  size_t ntuples_per_partition = Params::kMaxTuples;
   //  size_t ntuples_per_partition = rel->ntuples; 
 
-  for (uint32_t node = 0; node < rel->nnodes; ++node) {
+  uint32_t node;
+  for (node = 0; node < rel->nnodes; ++node) {
     node_bind(node); // we ensure all the partition objects are allocated on that node
 
     size_t ntuples = rel->ntuples_on_node[node];
     tuple_t *tuple = rel->tuples[node];
     while (ntuples > 0) {
       size_t psize = (ntuples > ntuples_per_partition) ? ntuples_per_partition : ntuples;
-      partition_t *p = (partition_t*)partition_init(node);
+      partition_t *p = partition_init(node);
       p->tuple = tuple;
       p->tuples = psize;
       p->radix = 0; // to make the radix computation in partitioning easier
@@ -142,6 +143,13 @@ Table::BuildTableFromRelation(relation_t *rel)
       table->AddPartition(p);
     }
   }
+  
+  // initialize all remaining nodes to NULL
+  for (; node != num_numa_nodes(); ++node) {
+    // do nothing
+  }
+
+
   table->set_ready();
   return table;
 }

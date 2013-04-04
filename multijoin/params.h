@@ -5,9 +5,6 @@
 
 #include "types.h"
 
-#define PARTITION_SIZE_MIN (1024 * 32) // 32K
-#define PARTITION_SIZE_Max (1024 * 256) // 256K
-
 #define CACHE_LINE_SIZE 64
 
 class Params
