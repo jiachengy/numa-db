@@ -27,28 +27,26 @@ PartitionTask::DoPartition(thread_t *my)
 
   uint64_t block_mask = Params::kMaxTuples - 1;
 
-  // request the buffer
-  buffer_t *bufferpool = my->buffer;
   // check buffer compatibility
-  if (!buffer_compatible(bufferpool, out_->id(), inp->radix)) {
+  if (!buffer_compatible(my->buffer, out_->id(), inp->radix)) {
     // flush old buffers
-    if (bufferpool) {
-      partition_t **buffer = bufferpool->partition;
-      for (int i = 0; i != bufferpool->partitions; ++i) {
-        buffer[i]->ready = true;
-        DispatchNewPartition(buffer[i], my);
-        out_->AddPartition(buffer[i]);
+    if (my->buffer) {
+      partition_t **buffer = my->buffer->partition;
+      for (int i = 0; i != my->buffer->partitions; ++i) {
+          buffer[i]->ready = true;
+          out_->AddPartition(buffer[i]);
+          DispatchNewPartition(buffer[i], my);
       }
+      buffer_destroy(my->buffer);
     }
-    bufferpool = buffer_init(out_->id(), inp->radix, fanout);
+    my->buffer = buffer_init(out_->id(), inp->radix, fanout);
   }
-  partition_t **buffer = bufferpool->partition;
+  partition_t **buffer = my->buffer->partition;
 
   // initialize the output with initial buffer
   for (int i = 0; i != fanout; ++i) {
     // leave enough room for alignment
-    if (buffer[i] == NULL ||
-        buffer[i]->tuples + Params::kTuplesPerCacheLine > Params::kMaxTuples) {
+    if (buffer[i] == NULL) {
       buffer[i] = my->memm->GetPartition();
       buffer[i]->radix = encode_radix(inp->radix, i, shift);
     }
@@ -65,23 +63,13 @@ PartitionTask::DoPartition(thread_t *my)
   for (int i = 0; i != fanout; ++i)
     part[i] = &buffer[i]->tuple[buffer[i]->tuples];
 
-  // cache line alignment
-  int i = fanout;
-  // notice that if a output buffer does not have room
-  // for 7 elements, we created a new buffer instead
-  do {
-    tuple_t row = *tuple_ptr++;
-    uint32_t hash = mhash(row.key, mask, shift);
-    *part[hash]++ = row;
-    if (++wc_count[hash] == 7 && !--i) break;
-  } while (tuple_ptr != tuple_end);
   // copy data to buffers and ensure cache-line aligned writes
   for (int i = 0 ; i != fanout ; ++i) {
     uint64_t o, off = part[i] - output;
     wc_buf[i].data[7] = off;
     off &= 7;
     for (o = 0 ; o != off ; ++o)
-      wc_buf[i].data[o] = ((uint64_t*)part[i])[o - off];
+      wc_buf[i].data[o] = ((uint64_t*)(part[i]))[o - off];
   }
 
   // software write combining on page blocks
@@ -114,11 +102,10 @@ PartitionTask::DoPartition(thread_t *my)
       // check for end of buffer
       if (((index + 1) & block_mask) == 0) {
         partition_t *full = buffer[hash];
-        full->tuples = Params::kMaxTuples;
         full->ready = true;
-
-        DispatchNewPartition(full, my);
+        full->tuples = Params::kMaxTuples;
         out_->AddPartition(full);
+        DispatchNewPartition(full, my);
 
         partition_t *empty = my->memm->GetPartition();
         empty->radix = encode_radix(inp->radix, hash, shift);
@@ -152,9 +139,6 @@ PartitionTask::DispatchNewPartition(partition_t *p, thread_t *my)
 
   PartitionTask *newtask = new PartitionTask(p, Params::kOffsetPass2, Params::kNumBitsPass2, NULL);
 
-  /* Here is a special add task */
-  /* You have to get the inner level task list of this key */
-  
   P2Task *p2task = p2tasks_[p->node][p->radix];
   p2task->AddSubTask(newtask);
 }
@@ -167,26 +151,28 @@ void PartitionTask::Finish(thread_t* my)
   if (!in_->done())
     return;
 
-  // force flush
-  thread_t * thread = my->env->threads();
-  for (int tid = 0; tid != my->env->nthreads(); ++tid) {
-    buffer_t *buffer = thread[tid].buffer; // NEED a latch to do this work
-    // force flush all remaining buffers
-    if (buffer && buffer->table == out_->id()) {
-      for (int i = 0; i < buffer->partitions; i++) {
-        out_->AddPartition(buffer->partition[i]);
-        DispatchNewPartition(buffer->partition[i], my);
-      }
-      buffer_destroy(buffer);
-      thread[tid].buffer = NULL; 
-    }
-  }
-
   // set output table to ready
   out_->set_ready();
 
   if (out_->id() == my->env->output_table()->id()) {
+    // force flush only if we are the last operation
+    thread_t * thread = my->env->threads();
+    for (int tid = 0; tid != my->env->nthreads(); ++tid) {
+      buffer_t *buffer = thread[tid].buffer; // NEED a latch to do this work
+      // force flush all remaining buffers
+      if (buffer && buffer->table == out_->id()) {
+        for (int i = 0; i < buffer->partitions; i++) {
+          if (buffer->partition[i] && buffer->partition[i]->tuples != 0) {
+            buffer->partition[i]->ready = true;
+            out_->AddPartition(buffer->partition[i]);
+            DispatchNewPartition(buffer->partition[i], my);
+          }
+        }
+        buffer_destroy(buffer);
+      }
+    }
     my->env->set_done();
+
     return;
   }
 
@@ -224,7 +210,13 @@ void PartitionTask::Finish(thread_t* my)
 
 void PartitionTask::Run(thread_t *my)
 {
+  perf_reset(my->perf);
+  
   DoPartition(my);
+
+  perf_accum(my->perf);
+
+
   Finish(my);
 }
 

@@ -17,23 +17,31 @@ int main(int argc, char *argv[])
 #endif
 
   int nthreads = 1;
+
+  if (argc > 1)
+    nthreads = atoi(argv[1]);
+
+
   size_t rsize = 1024 * 1024 * 16; // 128M
   //  size_t ssize = 128 * 1024 * 1024; // 128M
 
-  relation_t * relR = parallel_build_relation_fk(rsize, 1 << 30, 1, 8);
+  relation_t * relR = parallel_build_relation_pk(rsize, 1, 1);
   //  relation_t *relS = parallel_build_relation_fk(ssize, rsize, 1, 8);
   logging("Building table with %ld tuples done.\n", rsize);
 
-  size_t capacity = rsize * 32;
+  size_t capacity = rsize * 8;
   Environment *env = new Environment(1, nthreads, capacity);
 
   logging("Environment initialized.\n");
 
-  env->RadixPartition(relR);
+  //  env->RadixPartition(relR);
+  env->TwoPassPartition(relR);
+  //  env->TwoPassPartition(relR, relS);
+
 
   logging("Query initialized.\n");
 
-  // //  env->TwoPassPartition(relR, relS);
+
 
   Run(env);
 

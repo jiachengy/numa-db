@@ -141,6 +141,8 @@ void* work_thread(void *param)
     }
   }
 
+  logging("Remaining partition: %d\n", my->memm->available());
+
 #if PER_CORE==1
   perf_stop(my->perf);
 #if PERF_ALL == 1
@@ -223,7 +225,7 @@ void Run(Environment *env)
     }
   }
   
-  tb = env->GetTable(1);
+  tb = env->output_table();
   long long sum1 = 0;
   for (uint32_t key = 0; key < tb->nkeys(); key++) {
     list<partition_t*> &ps = tb->GetPartitionsByKey(key);
@@ -237,5 +239,6 @@ void Run(Environment *env)
       }
     }
   }
+  logging("%ld %ld\n", sum, sum1);
   assert(sum1 == sum);
 }

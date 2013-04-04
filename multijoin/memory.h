@@ -35,6 +35,7 @@ class Memory
   ~Memory();	
 
   tuple_t* baseptr() { return (tuple_t*)base_; }
+  size_t available() { return freelist_.size(); }
 
   partition_t* GetPartition();	
 

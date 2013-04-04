@@ -4,11 +4,6 @@
 #include <papi.h>
 #include <stdint.h>
 
-#ifndef USE_PERF
-#define USE_PERF
-#endif
-
-
 #ifndef PER_CORE
 #define PER_CORE 1
 #endif
@@ -25,7 +20,7 @@
 #if PER_CORE == 1
 
 #ifndef PERF_PARTITION
-#define PERF_PARTITION 0
+#define PERF_PARTITION 1
 #endif
 
 #ifndef PERF_JOIN
@@ -33,7 +28,7 @@
 #endif
 
 #ifndef PERF_ALL
-#define PERF_ALL 1
+#define PERF_ALL 0
 #endif
 
 #endif

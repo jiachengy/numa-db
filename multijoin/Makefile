@@ -1,5 +1,5 @@
 CC=g++
-DEFINES=-DDEBUG
+DEFINES=-DDEBUG -DUSE_PERF
 CFLAGS=-pthread -Wall -msse4 -g -O3
 LIBS=-lpthread -lnuma -lpapi
 

@@ -123,8 +123,8 @@ Table::BuildTableFromRelation(relation_t *rel)
 {
   Table *table = new Table(rel->nnodes, 0);
 
-  //  size_t ntuples_per_partition = Params::kPartitionSize / sizeof(tuple_t);
-  size_t ntuples_per_partition = rel->ntuples;
+   size_t ntuples_per_partition = Params::kMaxTuples;
+  //  size_t ntuples_per_partition = rel->ntuples; 
 
   for (uint32_t node = 0; node < rel->nnodes; ++node) {
     node_bind(node); // we ensure all the partition objects are allocated on that node
