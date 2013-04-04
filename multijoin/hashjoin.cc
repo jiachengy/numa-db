@@ -15,6 +15,20 @@ inline uint32_t mhash(uint32_t key, uint32_t mask, int shift)
   return (key & mask) >> shift;
 }
 
+void FlushBuffer(Table * table, partition_t *p, Environment *env)
+{
+  p->ready = true;
+  table->AddPartition(p);
+
+  if (table->type() == OpPartition2) {
+    PartitionTask *newtask = new PartitionTask(p, Params::kOffsetPass2, Params::kNumBitsPass2);
+
+    P2Task ***p2tasks = env->GetP2TaskByTable(table->id());
+    P2Task *p2task = p2tasks[p->node][p->radix];
+    p2task->AddSubTask(newtask);
+  }
+}
+
 void
 PartitionTask::DoPartition(thread_t *my)
 {
@@ -28,18 +42,17 @@ PartitionTask::DoPartition(thread_t *my)
   uint64_t block_mask = Params::kMaxTuples - 1;
 
   // check buffer compatibility
-  if (!buffer_compatible(my->buffer, out_->id(), inp->radix)) {
+  if (!buffer_compatible(my->buffer, out_, inp->radix)) {
     // flush old buffers
     if (my->buffer) {
       partition_t **buffer = my->buffer->partition;
       for (int i = 0; i != my->buffer->partitions; ++i) {
-          buffer[i]->ready = true;
-          out_->AddPartition(buffer[i]);
-          DispatchNewPartition(buffer[i], my);
+        if (buffer[i]->tuples != 0)
+          FlushBuffer(my->buffer->table, buffer[i], my->env);
       }
       buffer_destroy(my->buffer);
     }
-    my->buffer = buffer_init(out_->id(), inp->radix, fanout);
+    my->buffer = buffer_init(out_, inp->radix, fanout);
   }
   partition_t **buffer = my->buffer->partition;
 
@@ -101,16 +114,13 @@ PartitionTask::DoPartition(thread_t *my)
       wc_buf[hash].data[7] = index + 1;
       // check for end of buffer
       if (((index + 1) & block_mask) == 0) {
-        partition_t *full = buffer[hash];
-        full->ready = true;
-        full->tuples = Params::kMaxTuples;
-        out_->AddPartition(full);
-        DispatchNewPartition(full, my);
-
-        partition_t *empty = my->memm->GetPartition();
-        empty->radix = encode_radix(inp->radix, hash, shift);
-        wc_buf[hash].data[7] = empty->offset;
-        buffer[hash] = empty;
+        // flush full buffer
+        buffer[hash]->tuples = Params::kMaxTuples;
+        FlushBuffer(my->buffer->table, buffer[hash], my->env);
+        // create new buffer
+        buffer[hash] = my->memm->GetPartition();
+        buffer[hash]->radix = encode_radix(inp->radix, hash, shift);
+        wc_buf[hash].data[7] = buffer[hash]->offset;
       }
     }
   } while (++tuple_ptr != tuple_end);
@@ -131,17 +141,6 @@ PartitionTask::DoPartition(thread_t *my)
 }
 
 
-void
-PartitionTask::DispatchNewPartition(partition_t *p, thread_t *my)
-{
-  if (out_->type() != OpPartition2)
-    return;
-
-  PartitionTask *newtask = new PartitionTask(p, Params::kOffsetPass2, Params::kNumBitsPass2, NULL);
-
-  P2Task *p2task = p2tasks_[p->node][p->radix];
-  p2task->AddSubTask(newtask);
-}
 
 void PartitionTask::Finish(thread_t* my)
 {
@@ -154,34 +153,43 @@ void PartitionTask::Finish(thread_t* my)
   // set output table to ready
   out_->set_ready();
 
-  if (out_->id() == my->env->output_table()->id()) {
+  if (out_->type() == OpNone) {
+    my->env->commit();
+  }
+
+  if (my->env->queries() == 0) {
     // force flush only if we are the last operation
     thread_t * thread = my->env->threads();
     for (int tid = 0; tid != my->env->nthreads(); ++tid) {
       buffer_t *buffer = thread[tid].buffer; // NEED a latch to do this work
       // force flush all remaining buffers
-      if (buffer && buffer->table == out_->id()) {
+      if (buffer) {
         for (int i = 0; i < buffer->partitions; i++) {
-          if (buffer->partition[i] && buffer->partition[i]->tuples != 0) {
-            buffer->partition[i]->ready = true;
-            out_->AddPartition(buffer->partition[i]);
-            DispatchNewPartition(buffer->partition[i], my);
+          if (buffer->partition[i]->tuples != 0) {
+            FlushBuffer(buffer->table, buffer->partition[i], my->env);
           }
         }
         buffer_destroy(buffer);
       }
     }
     my->env->set_done();
-
     return;
   }
 
   switch (out_->type()) {
   case OpNone: // Set termination flag
-    my->env->set_done();
     return;
   case OpPartition:
     return;
+  case OpPartition2:
+    {
+      node_t *nodes = my->env->nodes();
+      for (int node = 0; node != my->env->nnodes(); ++node) {
+        logging("Unblock task %d\n", out_->id());
+        nodes[node].queue->Unblock(out_->id());
+      }
+    }
+    break;
   case OpBuild: //  Unblock build
     break;
   case OpProbe: // create probe task
@@ -210,14 +218,15 @@ void PartitionTask::Finish(thread_t* my)
 
 void PartitionTask::Run(thread_t *my)
 {
-  perf_reset(my->perf);
-  
+  perf_counter_t before = perf_read(my->perf);
+
   DoPartition(my);
-
-  perf_accum(my->perf);
-
-
   Finish(my);
+
+  perf_counter_t after = perf_read(my->perf);
+  perf_counter_t state = perf_counter_diff(before, after);
+
+  perf_counter_aggr(&my->stage_counter, state);
 }
 
 void BuildTask::Finish(thread_t* my, partition_t *htp)

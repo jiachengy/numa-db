@@ -230,22 +230,6 @@ parallel_build_relation_fk(const size_t ntuples, const int32_t maxid, const uint
   return rel;
 }
 
-relation_t *
-build_relation_pk(size_t ntuples)
-{
-  relation_t *rel = relation_init(1);
-  rel->ntuples = ntuples;
-
-  tuple_t * tuples = (tuple_t*)alloc(sizeof(tuple_t) * ntuples);
-  memset(tuples, 0, sizeof(tuple_t) * ntuples);
-  
-  random_unique_gen(tuples, ntuples);
-
-  rel->tuples[0] = tuples;
-
-  return rel;
-}
-
 
 relation_t *
 parallel_build_relation_pk(size_t ntuples, uint32_t nnodes, uint32_t nthreads)
@@ -310,5 +294,49 @@ parallel_build_relation_pk(size_t ntuples, uint32_t nnodes, uint32_t nthreads)
   return rel;
 }
 
+relation_t *
+build_relation_pk(size_t ntuples)
+{
+  relation_t *rel = relation_init(1);
+  rel->ntuples = ntuples;
 
+  node_bind(0);
+  node_membind(0);
+
+  tuple_t * tuples = (tuple_t*)alloc(sizeof(tuple_t) * ntuples);
+  memset(tuples, 0, sizeof(tuple_t) * ntuples);
+  
+  random_unique_gen(tuples, ntuples);
+
+  rel->tuples[0] = tuples;
+  rel->ntuples_on_node[0] = ntuples;
+  return rel;
+}
+
+
+relation_t *
+build_relation_pk_onnode(size_t ntuples, uint32_t node)
+{
+  assert(node < num_numa_nodes());
+
+  node_bind(node);
+
+  relation_t *rel = relation_init(num_numa_nodes());
+  rel->ntuples = ntuples;
+
+  tuple_t * tuples = (tuple_t*)alloc(sizeof(tuple_t) * ntuples);
+  memset(tuples, 0, sizeof(tuple_t) * ntuples);
+  
+  random_unique_gen(tuples, ntuples);
+
+  for (uint32_t i = 0; i != rel->nnodes; ++i) {
+    rel->tuples[i] = NULL;
+    rel->ntuples_on_node[i] = 0;
+  }
+
+  rel->tuples[node] = tuples;
+  rel->ntuples_on_node[node] = ntuples;
+
+  return rel;
+}
 

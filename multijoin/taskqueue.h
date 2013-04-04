@@ -13,6 +13,8 @@ class Taskqueue;
 #include "env.h"
 #include "table.h"
 
+struct thread_t;
+
 using namespace std;
 
 class Task

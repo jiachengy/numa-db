@@ -127,7 +127,7 @@ Table::BuildTableFromRelation(relation_t *rel)
   //  size_t ntuples_per_partition = rel->ntuples; 
 
   uint32_t node;
-  for (node = 0; node < rel->nnodes; ++node) {
+  for (node = 0; node != rel->nnodes; ++node) {
     node_bind(node); // we ensure all the partition objects are allocated on that node
 
     size_t ntuples = rel->ntuples_on_node[node];

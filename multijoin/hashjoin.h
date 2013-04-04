@@ -1,24 +1,22 @@
 #ifndef HASHJOIN_H_
 #define HASHJOIN_H_
 
-#include "table.h" // partition_t, Table
-#include "types.h" // tuple_t, OpType
-#include "taskqueue.h" // Task
-#include "env.h" // thread_t
-
 class PartitionTask;
 class P2Task;
 class BuildTask;
 class ProbeTask;
 class UnitProbeTask;
 
+#include "table.h" // partition_t, Table
+#include "types.h" // tuple_t, OpType
+#include "taskqueue.h" // Task
+#include "env.h" // thread_t
+
 class PartitionTask : public Task
 {
  private:
   // Input partition
   partition_t *part_;
-
-  P2Task ***p2tasks_;
 
   // Parameters
   int shift_; // cluster bits
@@ -27,17 +25,15 @@ class PartitionTask : public Task
   int mask_;
 
   void Finish(thread_t *my);
-  void DispatchNewPartition(partition_t *p, thread_t *my);
   void DoPartition(thread_t *my);
   
  public:
- PartitionTask(partition_t *part, int shift, int bits, P2Task ***p2tasks) : Task(OpPartition) {
+ PartitionTask(partition_t *part, int shift, int bits) : Task(OpPartition) {
     part_ = part;
     shift_ = shift;
     bits_ = bits;
     fanout_ = 1 << bits;
     mask_ = (fanout_-1) << shift_;
-    p2tasks_ = p2tasks;
   }
   
   virtual void Run(thread_t *my);

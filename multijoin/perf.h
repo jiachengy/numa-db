@@ -4,12 +4,12 @@
 #include <papi.h>
 #include <stdint.h>
 
+#define MAX_PERF_EVENTS 8
+
+
+
 #ifndef PER_CORE
 #define PER_CORE 1
-#endif
-
-#ifndef PER_SOCKET
-#define PER_SOCKET 0
 #endif
 
 #ifndef PER_SYSTEM
@@ -27,17 +27,21 @@
 #define PERF_JOIN 0
 #endif
 
-#ifndef PERF_ALL
-#define PERF_ALL 0
-#endif
-
 #endif
 
 typedef long long int counter_t;
 
+struct perf_counter_t {
+  long tick;
+  counter_t value[MAX_PERF_EVENTS];
+};
+
+perf_counter_t perf_counter_diff(perf_counter_t before, perf_counter_t after);
+void perf_counter_aggr(perf_counter_t *lhs, perf_counter_t rhs);
+
+
 struct perf_t {
   int EventSet;
-  counter_t *values;
 };
 
 void perf_register_thread();
@@ -49,12 +53,10 @@ void perf_lib_cleanup();
 perf_t* perf_init();
 void perf_destroy(perf_t *perf);
 void perf_start(perf_t *perf);
-void perf_reset(perf_t *perf);
-void perf_stop(perf_t *perf); /* stop the counter, but do not write the counter values */
-void perf_print(perf_t *perf);
-void perf_aggregate(perf_t *total, perf_t *perf);
-void perf_read(perf_t *perf);
-void perf_accum(perf_t *perf);
+void perf_stop(perf_t *perf);
+void perf_print(perf_counter_t counter);
+perf_counter_t perf_read(perf_t *perf);
 
+extern perf_counter_t PERF_COUNTER_INITIALIZER;
 
 #endif // PERF_H_

@@ -4,29 +4,28 @@
 #include <pthread.h>
 #include <numa.h>
 
-class Environment;
-
-typedef struct node_t node_t;
-typedef struct thread_t thread_t;
-
 #include "taskqueue.h"
 #include "table.h"
 #include "memory.h"
-#include "builder.h"
-
 #include "perf.h"
 
+typedef struct thread_t thread_t;
+typedef struct node_t node_t;
+
+class Environment;
+class P2Task;
+
 struct buffer_t {
-  int table;
+  Table * table; // get p2tasks by table
   int radix;
-  
+
   partition_t **partition;
   int partitions;
 };
 
-buffer_t* buffer_init(int table, int key, int partitions);
+buffer_t* buffer_init(Table *table, int key, int partitions);
 void buffer_destroy(buffer_t *buffer);
-bool buffer_compatible(buffer_t *buffer, int table, int radix);
+bool buffer_compatible(buffer_t *buffer, Table *table, int radix);
 
 
 struct node_t {
@@ -69,11 +68,9 @@ struct thread_t {
   uint32_t shared;
   uint32_t remote;
 
-#ifdef USE_PERF
-#if PER_CORE == 1
-  perf_t *perf;
-#endif
-#endif
+  perf_t *perf; 
+  perf_counter_t stage_counter;
+  perf_counter_t total_counter;
 };
 
 using namespace std;
@@ -97,6 +94,9 @@ class Environment
   // all task lists
   vector<Tasklist*> tasks_;
 
+  // all task lists
+  vector<P2Task***> p2tasks_;
+
   // probe lists
   vector<Tasklist*> probes_;
 
@@ -104,6 +104,7 @@ class Environment
   Table *build_;
 
   // indicate the query is finished.
+  int queries_;
   bool done_;
 
   static void*init_thread(void *params);
@@ -120,6 +121,10 @@ class Environment
   int nthreads_per_node() { return nthreads_ / nnodes_; }
 
   int nnodes() { return nnodes_; }
+
+  int queries() { return queries_; }
+  void commit() { --queries_; }
+
   bool done() { return done_; }
   void set_done() { done_ = true; }
   vector<Tasklist*>& probes() { return probes_; }
@@ -137,6 +142,17 @@ class Environment
   void AddTable(Table *table) {
     tables_.push_back(table);
   }
+
+  void AddP2Tasks(P2Task *** p2tasks, uint32_t table_id) {
+    if (table_id >= p2tasks_.size())
+      p2tasks_.resize(table_id + 1);
+    p2tasks_[table_id] = p2tasks;
+  }
+
+  P2Task*** GetP2TaskByTable(int table_id) {
+    return p2tasks_[table_id];
+  }
+
 
   void Reset();
 
