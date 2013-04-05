@@ -12,6 +12,7 @@ class UnitProbeTask;
 #include "taskqueue.h" // Task
 #include "env.h" // thread_t
 
+
 class PartitionTask : public Task
 {
  private:
@@ -77,18 +78,17 @@ class P2Task : public Task
 class BuildTask : public Task
 {
  private:
-  int key_;
+  int radix_;
 
   // information required to create the probing task
   Table *probe_;
-  Table *probe_out_;
 
-  void Finish(thread_t *my, partition_t *htp);
+  hashtable_t* Build(thread_t * my);
+  void Finish(thread_t *my, hashtable_t *ht);
 
  public:
- BuildTask(OpType type, Table *probe, int key) : Task(type) {
-    key_ = key;
-    
+ BuildTask(Table *probe, int radix) : Task(OpBuild) {
+    radix_ = radix;
     probe_ = probe;
   }
 
@@ -132,5 +132,17 @@ class UnitProbeTask : public Task
 
   virtual void Run(thread_t *my);
 };
+
+inline uint32_t encode_radix(uint32_t low, uint32_t high, int offset)
+{
+  return low | (high << offset);
+}
+
+inline uint32_t mhash(uint32_t key, uint32_t mask, int shift)
+{
+  return (key & mask) >> shift;
+}
+
+
 
 #endif // HASHJOIN_H_

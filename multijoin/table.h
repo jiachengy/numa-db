@@ -7,7 +7,8 @@
 #include <cassert>
 #include <pthread.h>
 
-class Partition;
+typedef struct partition_t partition_t;
+
 class Table;
 
 #include "params.h"
@@ -92,8 +93,7 @@ class Table {
   uint32_t done_count() { return done_count_; }
   uint32_t nparts() { return nparts_; }
 
-#ifdef DEBUG
-  long long Sum() {
+  long long Validate(int mask, int shift) {
     long long sum = 0;
     for (uint32_t node = 0; node < nnodes_; ++node) {
       list<partition_t*> &ps = GetPartitionsByNode(node);
@@ -107,9 +107,19 @@ class Table {
         }
       }
     }
+
+    for (uint32_t key = 0; key < nkeys_; ++key) {
+      list<partition_t*> &pk = GetPartitionsByKey(key);
+      for (list<partition_t*>::iterator it = pk.begin();
+           it != pk.end(); ++it) {
+        tuple_t *tuple = (*it)->tuple;
+        for (uint32_t i = 0; i < (*it)->tuples; i++)
+          assert(tuple[i].key % nkeys_ == key);
+      }
+    }
+
     return sum;
   }
-#endif
 
   static Table* BuildTableFromRelation(relation_t *rel);
 };

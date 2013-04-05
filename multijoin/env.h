@@ -69,7 +69,7 @@ struct thread_t {
   uint32_t remote;
 
   perf_t *perf; 
-  perf_counter_t stage_counter;
+  perf_counter_t *stage_counter;
   perf_counter_t total_counter;
 };
 
@@ -155,7 +155,7 @@ class Environment
 
 
   void Reset();
-
+  void PartitionAndBuild(relation_t *relR);
   void TwoPassPartition(relation_t *relR);
   void TwoPassPartition(relation_t *relR, relation_t *relS);
   void RadixPartition(relation_t *rel);

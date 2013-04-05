@@ -69,13 +69,6 @@ Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys /*, size_t nbuffers */
   nnodes_ = nnodes;
   pnodes_.resize(nnodes);
 
-  // nbuffers_ = nbuffers;
-
-  // buffers_.resize(nnodes_);  
-  // for (uint32_t node = 0; node < nnodes; ++node) {
-  //   for (uint32_t b = 0; b < nbuffers_; b++)
-  //     buffers_[node].push_back(NULL);
-  // }
 
   pthread_mutex_init(&mutex_, NULL);
 }
@@ -94,9 +87,6 @@ Table::~Table() {
 void Table::AddPartition(partition_t *p)
 {
   pthread_mutex_lock(&mutex_);
-
-  //  p->set_ready(); // p is read only now
-  // p's set ready should be set by itself
 
   pnodes_[p->node].push_back(p);
   if (nkeys_)

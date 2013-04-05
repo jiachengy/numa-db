@@ -227,17 +227,22 @@ void Run(Environment *env)
   perf_counter_t count = perf_counter_diff(before, after);
 #elif PER_CORE == 1
   thread_t *args = env->threads();
-  perf_counter_t stage_aggr = PERF_COUNTER_INITIALIZER;
+  perf_counter_t partition_aggr = PERF_COUNTER_INITIALIZER;
+  perf_counter_t build_aggr = PERF_COUNTER_INITIALIZER;
   perf_counter_t total_aggr = PERF_COUNTER_INITIALIZER;
 
   for (int i = 0; i != env->nthreads(); ++i) {
-    perf_counter_aggr(&stage_aggr, args[i].stage_counter);
+    perf_counter_aggr(&partition_aggr, args[i].stage_counter[0]);
+    perf_counter_aggr(&build_aggr, args[i].stage_counter[1]);
     perf_counter_aggr(&total_aggr, args[i].total_counter);
-    logging("Thread[%d] stage time: %ld usec\n", i, args[i].stage_counter.tick);
+    logging("Thread[%d] partition time: %ld usec\n", i, args[i].stage_counter[0].tick);
+    logging("Thread[%d] build time: %ld usec\n", i, args[i].stage_counter[1].tick);
     logging("Thread[%d] time: %ld  usec\n", i, args[i].total_counter.tick);
   }
-  logging("Aggregate stage counter:\n");
-  perf_print(stage_aggr);
+  logging("Aggregate partition counter:\n");
+  perf_print(partition_aggr);
+  logging("Aggregate build counter:\n");
+  perf_print(build_aggr);
   logging("Aggregate total counter:\n");
   perf_print(total_aggr);
 #endif
@@ -254,16 +259,20 @@ void Run(Environment *env)
   Table *tr = env->GetTable(0);
   Table *trpass1 = env->GetTable(1);
   Table *trpass2 = env->GetTable(2);
-  Table *ts = env->GetTable(3);
-  Table *tspass1 = env->GetTable(4);
-  Table *tspass2 = env->GetTable(5);
+  // Table *ts = env->GetTable(3);
+  // Table *tspass1 = env->GetTable(4);
+  // Table *tspass2 = env->GetTable(5);
+
+  int shift1 = Params::kOffsetPass1;
+  int mask1 = (((1 << Params::kNumBitsPass1) - 1) << shift1);
+  int shift2 = Params::kNumRadixBits;
+  int mask2 = (1 << Params::kNumRadixBits) - 1;
   
-  logging("sum: %lld, sum1: %lld, sum2: %lld\n", tr->Sum(), trpass1->Sum(), trpass2->Sum());
-  logging("sum: %lld, sum1: %lld, sum2: %lld\n", ts->Sum(), tspass1->Sum(), tspass2->Sum());
+  long long sum0 = tr->Validate(0, 0);
+  long long sum1 = trpass1->Validate(mask1, shift1);
+  long long sum2 = trpass2->Validate(mask2, shift2);
 
-  //assert(tr->Sum() == trpass2->Sum());
-//assert(ts->Sum() == tspass1->Sum());
-
+  logging("sum: %lld, sum1: %lld, sum2: %lld\n", sum0, sum1, sum2);
   
 
 #if PER_SYSTEM == 1

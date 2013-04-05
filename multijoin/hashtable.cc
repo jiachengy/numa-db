@@ -2,6 +2,7 @@
 #include "hashtable.h"
 #include "util.h"
 
+#ifdef BUCKET_CHAINING
 void hashtable_free(hashtable_t *ht)
 {
   if (ht->next)
@@ -45,3 +46,5 @@ void hashtable_reset(hashtable_t *ht)
 {
   memset(ht->bucket, 0, sizeof(int) * ht->nbuckets);
 }
+#endif
+

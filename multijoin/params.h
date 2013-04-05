@@ -7,6 +7,8 @@
 
 #define CACHE_LINE_SIZE 64
 
+#define STAGES 4
+
 class Params
 {
  public:
@@ -18,11 +20,11 @@ class Params
 
   //  static const int kHtInflateRate = 1; // can only be 2^k
 
-  static const int kNumRadixBits = 10;
+  static const int kNumRadixBits = 12;
   static const int kNumPasses = 2; 
 
-  static const int kNumBitsPass1 = 5;
-  static const int kNumBitsPass2 = 5;
+  static const int kNumBitsPass1 = 6;
+  static const int kNumBitsPass2 = 6;
 
   static const int kOffsetPass1 = 0;
   static const int kOffsetPass2 = kNumBitsPass1;

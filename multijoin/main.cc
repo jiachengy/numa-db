@@ -27,21 +27,22 @@ int main(int argc, char *argv[])
   //   build_node = atoi(argv[3]);
   
   size_t rsize = 1024 * 1024 * 16; // 128M
-  size_t ssize = 1024 * 1024 * 16; // 16M
+  //  size_t ssize = 1024 * 1024 * 16; // 16M
 
-  relation_t * relR = parallel_build_relation_pk(rsize, 1, 1);
+  relation_t * relR = parallel_build_relation_fk(rsize, rsize, 1, 1);
   logging("Building R table with %ld tuples done.\n", rsize);
-  relation_t *relS = parallel_build_relation_fk(ssize, rsize, 1, 8);
-  logging("Building S table with %ld tuples done.\n", ssize);
+  // relation_t *relS = parallel_build_relation_fk(ssize, rsize, 1, 8);
+  // logging("Building S table with %ld tuples done.\n", ssize);
 
-  size_t capacity = rsize * 16;
+  size_t capacity = rsize * 32;
   Environment *env = new Environment(nodes, nthreads * nodes, capacity);
 
   logging("Environment initialized.\n");
 
-  //   env->RadixPartition(relR);
-  //    env->TwoPassPartition(relR);
-     env->TwoPassPartition(relR, relS);
+  env->PartitionAndBuild(relR);
+    // env->RadixPartition(relR);
+     // env->TwoPassPartition(relR);
+  //     env->TwoPassPartition(relR, relS);
 
   logging("Query initialized.\n");
 
