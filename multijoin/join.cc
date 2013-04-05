@@ -1,5 +1,7 @@
 #include <smmintrin.h>
 
+//#define NAIVE
+
 #include "params.h"
 #include "hashjoin.h"
 #include "perf.h"
@@ -12,6 +14,7 @@ inline size_t get_hist_size(size_t tuples)
   return tuples;
 }
 
+#ifdef NAIVE
 hashtable_t * BuildTask::Build(thread_t * my)
 {
   tuple_t * output = my->memm->baseptr();
@@ -27,8 +30,95 @@ hashtable_t * BuildTask::Build(thread_t * my)
   int shift = Params::kNumRadixBits;
   int32_t mask  = (partitions-1) << shift;
 
-  logging("tuples: %ld, partitions: %ld\n", total_tuples, partitions);
+  uint64_t *hist   = (uint64_t*) calloc(partitions, sizeof(uint64_t));
+  for(list<partition_t*>::iterator it = parts.begin();
+      it != parts.end(); ++it ) {
+    tuple_t * tuple = (*it)->tuple;
+    size_t tuples = (*it)->tuples;
+    for (uint64_t i = 0; i != tuples ; ++i) {
+      uint32_t hash = mhash(tuple[i].key, mask, shift);
+      hist[hash]++;
+    }
+  }
   
+  // temp output buffer holder
+  tuple_t **part = (tuple_t**)malloc(partitions * sizeof(tuple_t*));
+  // index start, index end
+  uint32_t *part_start = (uint32_t*)malloc(partitions * sizeof(uint32_t));
+  uint32_t *part_end = (uint32_t*)malloc(partitions * sizeof(uint32_t));
+
+  // TODO: consider overflow hash tables
+  assert(total_tuples <= Params::kMaxTuples);
+  partition_t * outp = my->memm->GetPartition();
+  outp->tuples = total_tuples;
+
+  /* prefix sum on histogram */
+  for( uint32_t i = 0; i != partitions; i++ ) {
+    part[i] = i ? part[i-1] + hist[i-1] : outp->tuple;
+    part_start[i] = i ? part_start[i-1] + hist[i-1] : 0;
+    part_end[i] = part_start[i] + hist[i];
+  }
+
+  for(list<partition_t*>::iterator it = parts.begin();
+      it != parts.end(); ++it ) {
+    tuple_t * tuple = (*it)->tuple;
+    for (int i = 0; i < (*it)->tuples; ++i) {
+      uint32_t hash = mhash(tuple[i].key, mask, shift);
+      *(part[hash]++) = tuple[i];
+    }
+  }
+
+  hashtable_t * ht = (hashtable_t*)malloc(sizeof(hashtable_t));
+  ht->data = outp;
+  ht->tuples = total_tuples;
+  ht->start = part_start;
+  ht->end = part_end;
+  ht->partitions = partitions;
+
+  /*
+  // validate
+  long long sum = 0;
+  for(list<partition_t*>::iterator it = parts.begin();
+      it != parts.end(); ++it ) {
+    tuple_t * tuple = (*it)->tuple;
+    size_t tuples = (*it)->tuples;
+    for (uint64_t i = 0; i != tuples ; ++i) {
+      sum += tuple[i].key;
+    }
+  }
+  long long sum1 = 0;
+  tuple_t * tuple = outp->tuple;
+  for (uint32_t i = 0 ; i != partitions ; ++i) {
+    assert(part_end[i] == part_start[i] + hist[i]);
+    for (uint32_t j = part_start[i]; j != part_end[i]; ++j) {
+      assert(mhash(tuple[j].key, mask, shift) == i);
+      sum1 += tuple[j].key;
+    }
+  }
+  assert(sum == sum1);
+  */
+
+  free(part);
+  free(hist);
+  
+  return ht;
+}
+#else
+hashtable_t * BuildTask::Build(thread_t * my)
+{
+  tuple_t * output = my->memm->baseptr();
+
+  list<partition_t*> &parts = in_->GetPartitionsByKey(radix_);
+
+  size_t total_tuples = 0;
+  for(list<partition_t*>::iterator it = parts.begin();
+      it != parts.end(); ++it )
+    total_tuples += (*it)->tuples;
+
+  size_t partitions = get_hist_size(total_tuples);
+  int shift = Params::kNumRadixBits;
+  int32_t mask  = (partitions-1) << shift;
+
   uint64_t *hist   = (uint64_t*) calloc(partitions, sizeof(uint64_t));
   for(list<partition_t*>::iterator it = parts.begin();
       it != parts.end(); ++it ) {
@@ -165,6 +255,7 @@ hashtable_t * BuildTask::Build(thread_t * my)
   
   return ht;
 }
+#endif
 
 #ifdef BUCKET_CHAINING
 // NOT IMPLEMENTED
