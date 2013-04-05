@@ -93,20 +93,33 @@ class BuildTask : public Task
   }
 
   virtual void Run(thread_t *my);
-
 };
 
 class ProbeTask : public Task
 {
  private:
-  int key_;
+  Tasklist *subtasks_;
+  int radix_;
+
  public:
- ProbeTask(OpType type, int key)
-    : Task(type) {
-    key_ = key;
+ ProbeTask(Table *in, Table *out, int radix)
+    : Task(OpProbe) {
+    radix_ = radix;
+    subtasks_ = new Tasklist(in, out, ShareLocal);
   }
   
-  virtual void Run(thread_t *my);
+  virtual void Run(thread_t *my) {
+    assert(my->batch_task == NULL);
+    assert(my->localtasks == NULL);    
+    my->batch_task = this;
+    my->localtasks = subtasks_;
+  }
+
+  // the subtask has to be a PartitionTask
+  void AddSubTask(UnitProbeTask *task) {
+    subtasks_->AddTaskAtomic((Task*)task);
+  }
+
 };
 
 
@@ -114,22 +127,13 @@ class ProbeTask : public Task
 class UnitProbeTask : public Task
 {
  private:
-  partition_t *part_;
+  partition_t *input_;
 
-  Table *build_;
-
-  //  void ProbeBlock(thread_t *my, block_t block, hashtable_t *ht);
   void Finish(thread_t* my);
+  void DoJoin(hashtable_t *hashtable, thread_t *my);
 
  public:
-  UnitProbeTask(OpType type, partition_t *part,
-           Table *build)
-    : Task(type) {
-    part_ = part;
-    build_ = build;
-  }
-  
-
+ UnitProbeTask(partition_t *input) : Task(OpUnitProbe) { input_ = input; }
   virtual void Run(thread_t *my);
 };
 
@@ -143,6 +147,7 @@ inline uint32_t mhash(uint32_t key, uint32_t mask, int shift)
   return (key & mask) >> shift;
 }
 
+void FlushBuffer(Table * table, partition_t *p, Environment *env);
 
 
 #endif // HASHJOIN_H_

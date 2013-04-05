@@ -16,6 +16,11 @@ void FlushBuffer(Table * table, partition_t *p, Environment *env)
     P2Task *p2task = p2tasks[p->node][p->radix];
     p2task->AddSubTask(newtask);
   }
+  else if (table->type() == OpProbe) {
+    UnitProbeTask *newtask = new UnitProbeTask(p);
+    ProbeTask **probetasks = env->GetProbeTaskByTable(table->id());
+    probetasks[p->radix]->AddSubTask(newtask);
+  }
 }
 
 void
@@ -31,18 +36,20 @@ PartitionTask::DoPartition(thread_t *my)
   uint64_t block_mask = Params::kMaxTuples - 1;
 
   // check buffer compatibility
+  pthread_mutex_lock(&my->lock);
   if (!buffer_compatible(my->buffer, out_, inp->radix)) {
     // flush old buffers
     if (my->buffer) {
       partition_t **buffer = my->buffer->partition;
-      for (int i = 0; i != my->buffer->partitions; ++i) {
+      for (int i = 0; i != my->buffer->partitions; ++i)
         if (buffer[i]->tuples != 0)
           FlushBuffer(my->buffer->table, buffer[i], my->env);
-      }
       buffer_destroy(my->buffer);
     }
     my->buffer = buffer_init(out_, inp->radix, fanout);
   }
+  pthread_mutex_unlock(&my->lock);
+
   partition_t **buffer = my->buffer->partition;
 
   // initialize the output with initial buffer
@@ -139,32 +146,28 @@ void PartitionTask::Finish(thread_t* my)
   if (!in_->done())
     return;
 
+  // force flush
+  thread_t * thread = my->env->threads();
+  for (int tid = 0; tid != my->env->nthreads(); ++tid) {
+    pthread_mutex_lock(&thread[tid].lock);
+    buffer_t *buffer = thread[tid].buffer; // NEED a latch to do this work
+    // force flush all remaining buffers
+    if (buffer && buffer->table == out_) {
+      for (int i = 0; i != buffer->partitions; ++i)
+        if (buffer->partition[i]->tuples != 0)
+          FlushBuffer(buffer->table, buffer->partition[i], my->env);
+      buffer_destroy(buffer);
+      thread[tid].buffer = NULL;
+    }
+    pthread_mutex_unlock(&thread[tid].lock);
+  }
+
   // set output table to ready
+  // only if we have flushed all buffers
   out_->set_ready();
 
   if (out_->type() == OpNone)
     my->env->commit();
-
-
-  // Be careful about buffer flushing
-  // I think we still need to flush
-  // TODO: may conflict
-  if (out_->type() != OpPartition2) {
-    // force flush only if we are the last operation
-    thread_t * thread = my->env->threads();
-    for (int tid = 0; tid != my->env->nthreads(); ++tid) {
-      buffer_t *buffer = thread[tid].buffer; // NEED a latch to do this work
-      // force flush all remaining buffers
-      if (buffer) {
-        for (int i = 0; i < buffer->partitions; i++) {
-          if (buffer->partition[i]->tuples != 0) {
-            FlushBuffer(buffer->table, buffer->partition[i], my->env);
-          }
-        }
-        buffer_destroy(buffer);
-      }
-    }
-  }
 
   switch (out_->type()) {
   case OpNone: // Set termination flag
@@ -188,20 +191,9 @@ void PartitionTask::Finish(thread_t* my)
         nodes[node].queue->Unblock(out_->id());
     }
     break;
-  case OpProbe: // create probe task
+  case OpProbe: // unblock probing queues
     {
       node_t *nodes = my->env->nodes();
-      for (int key = 0; key < Params::kFanoutPass1; key++) {
-        Tasklist *probelist = my->env->probes()[key];
-
-        list<partition_t*> &parts = out_->GetPartitionsByKey(key);
-        for (list<partition_t*>::iterator it = parts.begin();
-             it != parts.end(); it++) {
-          Task *task = new UnitProbeTask(OpUnitProbe, *it, my->env->build_table());
-          probelist->AddTask(task);
-        }
-      }
-      // unblock probing queues
       for (int node = 0; node < my->env->nnodes(); ++node)
         nodes[node].queue->Unblock(out_->id());
     }

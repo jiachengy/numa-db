@@ -82,6 +82,7 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t capacity)
       thread->remote = 0;
 
       thread->buffer = NULL;
+      pthread_mutex_init(&thread->lock, NULL);
       thread->stage_counter = (perf_counter_t*)malloc(STAGES * sizeof(perf_counter_t));
       for (int i = 0; i != STAGES; ++i)
         thread->stage_counter[i] = PERF_COUNTER_INITIALIZER;
@@ -128,6 +129,9 @@ Environment::~Environment()
     delete memm_[node];
   }
 
+  for (uint32_t tid = 0; tid != nthreads_; tid++)
+    pthread_mutex_destroy(&threads_[tid].lock);
+
   free(threads_);
   free(nodes_);
   free(memm_);
@@ -141,10 +145,6 @@ Environment::~Environment()
   // deallocate tasks
   for (vector<Tasklist*>::iterator it = tasks_.begin();
        it != tasks_.end(); it++)
-    delete *it;
-
-  for (vector<Tasklist*>::iterator it = probes_.begin();
-       it != probes_.end(); it++)
     delete *it;
 }
 
@@ -451,3 +451,115 @@ Environment::PartitionAndBuild(relation_t *relR)
     }
   }
 }
+
+
+void
+Environment::Hashjoin(relation_t *relR, relation_t *relS)
+{
+  queries_ += 1;
+
+  Table *rt = Table::BuildTableFromRelation(relR);
+  rt->set_type(OpPartition);
+  Table *rpass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
+  Table *rpass2tb = new Table(OpBuild, nnodes_, Params::kFanoutTotal);
+  Table *rbuild = new Table(OpProbe, nnodes_, Params::kFanoutTotal);
+
+  Table *st = Table::BuildTableFromRelation(relS);
+  st->set_type(OpPartition);
+  Table *spass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
+  Table *spass2tb = new Table(OpProbe, nnodes_, Params::kFanoutTotal);
+
+  Table *result = new Table(OpNone, nnodes_, Params::kFanoutTotal);
+
+
+  // Table Catelog
+  AddTable(rt);
+  AddTable(rpass1tb);
+  AddTable(rpass2tb);
+  AddTable(rbuild);
+  AddTable(st);
+  AddTable(spass1tb);
+  AddTable(spass2tb);
+  AddTable(result);
+  build_ = rbuild;
+  
+  // Global accessible p2tasks
+  P2Task ***p2tasksR = (P2Task***)malloc(sizeof(P2Task**) * nnodes_);
+  P2Task ***p2tasksS = (P2Task***)malloc(sizeof(P2Task**) * nnodes_);
+  AddP2Tasks(p2tasksR, rpass1tb->id());
+  AddP2Tasks(p2tasksS, spass1tb->id());
+  for (uint32_t node = 0; node != nnodes_; ++node) {
+    P2Task **p2_tasks_on_nodeR = (P2Task**)malloc(sizeof(P2Task*) * Params::kFanoutPass1);
+    P2Task **p2_tasks_on_nodeS = (P2Task**)malloc(sizeof(P2Task*) * Params::kFanoutPass1);
+    for (int key = 0; key < Params::kFanoutPass1; ++key) {
+      p2_tasks_on_nodeR[key] = new P2Task(key, rpass1tb, rpass2tb);
+      p2_tasks_on_nodeS[key] = new P2Task(key, spass1tb, spass2tb);
+    }
+    p2tasksR[node] = p2_tasks_on_nodeR;
+    p2tasksS[node] = p2_tasks_on_nodeS;
+  }
+
+  // build tasks
+  Tasklist *buildR = new Tasklist(rpass2tb, rbuild, ShareGlobal);
+  for (int i = 0; i != Params::kFanoutTotal; ++i)
+    buildR->AddTask(new BuildTask(spass2tb, i));
+
+
+  // probe tasks
+  ProbeTask **probetasks = (ProbeTask**)malloc(sizeof(ProbeTask*) * Params::kFanoutTotal);
+  for (int radix = 0; radix != Params::kFanoutTotal; ++radix) {
+    probetasks[radix] = new ProbeTask(spass2tb, result, radix);
+  }
+  AddProbeTasks(probetasks, spass2tb->id());
+
+
+  for (uint32_t node = 0; node < nnodes_; node++) {
+    Taskqueue *tq = nodes_[node].queue;
+
+    Tasklist *rpass1tasks = new Tasklist(rt, rpass1tb, ShareNode);
+    tasks_.push_back(rpass1tasks);
+
+    Tasklist *spass1tasks = new Tasklist(st, spass1tb, ShareNode);
+    tasks_.push_back(spass1tasks);
+
+    Tasklist *rpass2tasks = new Tasklist(rpass1tb, rpass2tb, ShareNode);    
+    for (int key = 0; key < Params::kFanoutPass1; ++key)
+      rpass2tasks->AddTask(p2tasksR[node][key]);
+    tasks_.push_back(rpass2tasks);
+
+    Tasklist *spass2tasks = new Tasklist(spass1tb, spass2tb, ShareNode);    
+    for (int key = 0; key < Params::kFanoutPass1; ++key)
+      spass2tasks->AddTask(p2tasksS[node][key]);
+    tasks_.push_back(spass2tasks);
+
+    Tasklist *probetasks = new Tasklist(spass2tb, result, ShareNode);
+
+    tq->AddList(rpass1tasks);
+    tq->AddList(rpass2tasks);
+    tq->AddList(spass1tasks);
+    tq->AddList(spass2tasks);
+    tq->AddList(buildR);
+    tq->AddList(probetasks);
+    tq->Unblock(rpass1tasks->id());
+    //    tq->Unblock(rpass2tasks->id());
+    tq->Unblock(spass1tasks->id());
+    //    tq->Unblock(rpass2tasks->id());
+
+    // create partition task from table R
+    list<partition_t*>& pr = rt->GetPartitionsByNode(node);
+    logging("Partitions on node[%d]: %d\n", node, pr.size());
+    for (list<partition_t*>::iterator it = pr.begin(); 
+         it != pr.end(); it++) {
+      rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    }
+
+    list<partition_t*>& ps = st->GetPartitionsByNode(node);
+    logging("Partitions on node[%d]: %d\n", node, ps.size());
+    for (list<partition_t*>::iterator it = ps.begin(); 
+         it != ps.end(); it++) {
+      spass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    }
+  }
+
+}
+

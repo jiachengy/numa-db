@@ -23,8 +23,8 @@ class Params
   static const int kNumRadixBits = 12;
   static const int kNumPasses = 2; 
 
-  static const int kNumBitsPass1 = 6;
-  static const int kNumBitsPass2 = 6;
+  static const int kNumBitsPass1 = kNumRadixBits / kNumPasses;
+  static const int kNumBitsPass2 = kNumRadixBits - kNumBitsPass1;
 
   static const int kOffsetPass1 = 0;
   static const int kOffsetPass2 = kNumBitsPass1;

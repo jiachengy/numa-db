@@ -55,7 +55,8 @@ class Table {
 	
   bool ready_;
   bool done_;
-	
+
+  size_t tuples_;	
   uint32_t nparts_;
   uint32_t done_count_;
 
@@ -80,6 +81,8 @@ class Table {
 
   list<partition_t*>& GetPartitionsByNode(int node) {return pnodes_[node];}
   list<partition_t*>& GetPartitionsByKey(int key) { return pkeys_[key]; }
+
+  size_t tuples() { return tuples_; }
 
   uint32_t nnodes() { return nnodes_; }
   uint32_t nkeys() { return nkeys_; }

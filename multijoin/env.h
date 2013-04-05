@@ -14,6 +14,7 @@ typedef struct node_t node_t;
 
 class Environment;
 class P2Task;
+class ProbeTask;
 
 struct buffer_t {
   Table * table; // get p2tasks by table
@@ -60,14 +61,16 @@ struct thread_t {
   Environment *env; // pointer to global info
   Memory *memm; // memory manager
 
-  /* local buffer */
+  // local buffer
   buffer_t *buffer;
+  pthread_mutex_t lock;
 
-  // counters
+  // statistics
   uint32_t local;
   uint32_t shared;
   uint32_t remote;
 
+  // performance counters
   perf_t *perf; 
   perf_counter_t *stage_counter;
   perf_counter_t total_counter;
@@ -97,8 +100,11 @@ class Environment
   // all task lists
   vector<P2Task***> p2tasks_;
 
+  // all probe lists
+  vector<ProbeTask**> probetasks_;
+
   // probe lists
-  vector<Tasklist*> probes_;
+  //  vector<Tasklist*> probes_;
 
   // build table
   Table *build_;
@@ -127,7 +133,7 @@ class Environment
 
   bool done() { return done_; }
   void set_done() { done_ = true; }
-  vector<Tasklist*>& probes() { return probes_; }
+  //  vector<Tasklist*>& probes() { return probes_; }
   Table* build_table() { return build_; }
   int num_tables() { return tables_.size(); }
 
@@ -149,8 +155,18 @@ class Environment
     p2tasks_[table_id] = p2tasks;
   }
 
+  void AddProbeTasks(ProbeTask ** probetasks, uint32_t table_id) {
+    if (table_id >= probetasks_.size())
+      probetasks_.resize(table_id + 1);
+    probetasks_[table_id] = probetasks;
+  }
+
   P2Task*** GetP2TaskByTable(int table_id) {
     return p2tasks_[table_id];
+  }
+
+  ProbeTask** GetProbeTaskByTable(int table_id) {
+    return probetasks_[table_id];
   }
 
 
@@ -159,6 +175,8 @@ class Environment
   void TwoPassPartition(relation_t *relR);
   void TwoPassPartition(relation_t *relR, relation_t *relS);
   void RadixPartition(relation_t *rel);
+  void Hashjoin(relation_t *relR, relation_t *relS);
+
 };
 
 #endif // ENV_H_

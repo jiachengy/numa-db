@@ -92,6 +92,7 @@ void Table::AddPartition(partition_t *p)
   if (nkeys_)
     pkeys_[p->radix].push_back(p);
   nparts_++;
+  tuples_ += p->tuples;
  
   pthread_mutex_unlock(&mutex_);
 }

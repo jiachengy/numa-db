@@ -273,7 +273,9 @@ void Run(Environment *env)
   long long sum2 = trpass2->Validate(mask2, shift2);
 
   logging("sum: %lld, sum1: %lld, sum2: %lld\n", sum0, sum1, sum2);
-  
+
+  Table *output = env->output_table();
+  logging("matches: %ld\n", output->tuples());
 
 #if PER_SYSTEM == 1
   perf_stop(perf);

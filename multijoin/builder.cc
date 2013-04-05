@@ -14,9 +14,9 @@ knuth_shuffle(tuple_t *tuples, size_t ntuples, uint32_t seed)
   rand_state *state = rand_init(seed);
   for (int i = ntuples - 1; i > 0; i--) {
     int32_t  j = RAND_RANGE(i,state);
-    intkey_t tmp = tuples[i].key;
-    tuples[i].key = tuples[j].key;
-    tuples[j].key = tmp;
+    tuple_t tmp = tuples[i];
+    tuples[i] = tuples[j];
+    tuples[j] = tmp;
   }
   free(state);
 }
@@ -36,9 +36,9 @@ knuth_shuffle_rel(relation_t *rel, uint32_t seed)
     int node_i = i / ntuples_per_node;
     int offset_i = i - ntuples_per_node * node_i;
 
-    intkey_t tmp = rel->tuples[node_i][offset_i].key;
-    rel->tuples[node_i][offset_i].key = rel->tuples[node_j][offset_j].key;
-    rel->tuples[node_j][offset_j].key = tmp;
+    tuple_t tmp = rel->tuples[node_i][offset_i];
+    rel->tuples[node_i][offset_i] = rel->tuples[node_j][offset_j];
+    rel->tuples[node_j][offset_j] = tmp;
   }
   free(state);
 }
@@ -74,8 +74,10 @@ random_gen(tuple_t *tuple, size_t ntuples, const int32_t maxid)
   uint32_t seed = rand();
   rand_state *state = rand_init(seed);
 
-  for (uint32_t i = 0; i < ntuples; i++)
+  for (uint32_t i = 0; i < ntuples; i++) {
     tuple[i].key = RAND_RANGE(maxid, state);
+    tuple[i].payload = tuple[i].key;
+  }
 
   free(state);
 }
@@ -84,8 +86,10 @@ void
 random_unique_gen(tuple_t *tuple, size_t ntuples)
 {
 
-  for (uint32_t i = 0; i < ntuples; i++)
+  for (uint32_t i = 0; i < ntuples; i++) {
     tuple[i].key = i + 1;
+    tuple[i].payload = tuple[i].key;
+  }
 
   uint32_t seed = rand();
   knuth_shuffle(tuple, ntuples, seed);

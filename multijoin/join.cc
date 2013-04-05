@@ -1,7 +1,5 @@
 #include <smmintrin.h>
 
-//#define NAIVE
-
 #include "params.h"
 #include "hashjoin.h"
 #include "perf.h"
@@ -14,11 +12,8 @@ inline size_t get_hist_size(size_t tuples)
   return tuples;
 }
 
-#ifdef NAIVE
 hashtable_t * BuildTask::Build(thread_t * my)
 {
-  tuple_t * output = my->memm->baseptr();
-
   list<partition_t*> &parts = in_->GetPartitionsByKey(radix_);
 
   size_t total_tuples = 0;
@@ -62,7 +57,7 @@ hashtable_t * BuildTask::Build(thread_t * my)
   for(list<partition_t*>::iterator it = parts.begin();
       it != parts.end(); ++it ) {
     tuple_t * tuple = (*it)->tuple;
-    for (int i = 0; i < (*it)->tuples; ++i) {
+    for (uint64_t i = 0; i < (*it)->tuples; ++i) {
       uint32_t hash = mhash(tuple[i].key, mask, shift);
       *(part[hash]++) = tuple[i];
     }
@@ -103,7 +98,58 @@ hashtable_t * BuildTask::Build(thread_t * my)
   
   return ht;
 }
-#else
+
+
+void BuildTask::Run(thread_t *my)
+{
+  perf_counter_t before = perf_read(my->perf);
+
+  hashtable_t *ht = Build(my);
+  Finish(my, ht);
+
+  perf_counter_t after = perf_read(my->perf);
+  perf_counter_t state = perf_counter_diff(before, after);
+
+  perf_counter_aggr(&my->stage_counter[1], state);
+}
+
+
+void BuildTask::Finish(thread_t* my, hashtable_t *ht)
+{
+  partition_t * htp = partition_init(my->node_id);
+  htp->hashtable = ht;
+  htp->radix = radix_;
+  htp->ready = true;
+
+  // hash table partition
+  out_->AddPartition(htp);
+
+  // Commit
+  in_->Commit(in_->GetPartitionsByKey(radix_).size());
+
+  // We create a new probe task on this node
+  Taskqueue *queue = my->node->queue;
+  ProbeTask **probetask = my->env->GetProbeTaskByTable(probe_->id());
+  queue->AddTask(probe_->id(), probetask[radix_]);
+
+  // check if I am the last one to finish?
+  if (!in_->done())
+    return;
+
+  // set the output hashtable table to ready
+  out_->set_ready();
+
+  if (out_->type() == OpNone) 
+    my->env->commit();
+
+  if (my->env->queries() == 0)
+    my->env->set_done();
+}
+
+
+
+
+#ifdef WRITE_COMBINE
 hashtable_t * BuildTask::Build(thread_t * my)
 {
   tuple_t * output = my->memm->baseptr();
@@ -224,30 +270,6 @@ hashtable_t * BuildTask::Build(thread_t * my)
   ht->end = part_end;
   ht->partitions = partitions;
 
-
-  /*
-  // validate
-  long long sum = 0;
-  for(list<partition_t*>::iterator it = parts.begin();
-      it != parts.end(); ++it ) {
-    tuple_t * tuple = (*it)->tuple;
-    size_t tuples = (*it)->tuples;
-    for (uint64_t i = 0; i != tuples ; ++i) {
-      sum += tuple[i].key;
-    }
-  }
-  long long sum1 = 0;
-  tuple_t * tuple = outp->tuple;
-  for (uint32_t i = 0 ; i != partitions ; ++i) {
-    assert(part_end[i] == part_start[i] + hist[i]);
-    for (uint32_t j = part_start[i]; j != part_end[i]; ++j) {
-      assert(mhash(tuple[j].key, mask, shift) == i);
-      sum1 += tuple[j].key;
-    }
-  }
-  assert(sum == sum1);
-  */
-
   free(wc_count);
   free(wc_buf);
   free(part);
@@ -294,124 +316,83 @@ hashtable_t* BuildTask::Build(thread_t *my)
 }
 #endif
 
-void BuildTask::Run(thread_t *my)
+void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
 {
-  perf_counter_t before = perf_read(my->perf);
+  size_t partitions = hashtable->partitions;
+  int shift = Params::kNumRadixBits;
+  int32_t mask  = (partitions-1) << shift;
 
-  hashtable_t *ht = Build(my);
-  Finish(my, ht);
+  // check buffer compatibility
+  pthread_mutex_lock(&my->lock);
+  if (!buffer_compatible(my->buffer, out_, input_->radix)) {
+    // flush old buffers
+    if (my->buffer) {
+      partition_t **buffer = my->buffer->partition;
+      for (int i = 0; i != my->buffer->partitions; ++i)
+        if (buffer[i]->tuples != 0)
+          FlushBuffer(my->buffer->table, buffer[i], my->env);
+      buffer_destroy(my->buffer);
+    }
+    // we only need one buffer
+    my->buffer = buffer_init(out_, input_->radix, 1);
+  }
+  pthread_mutex_unlock(&my->lock);
 
-  perf_counter_t after = perf_read(my->perf);
-  perf_counter_t state = perf_counter_diff(before, after);
+  assert(my->buffer->partitions == 1);
 
-  perf_counter_aggr(&my->stage_counter[1], state);
+  if (my->buffer->partition[0] == NULL) {
+    my->buffer->partition[0] = my->memm->GetPartition();
+    my->buffer->partition[0]->radix = input_->radix;
+  }    
+
+  partition_t *outbuf = my->buffer->partition[0];
+
+  tuple_t * stuple = input_->tuple;
+  tuple_t * rtuple = hashtable->data->tuple;
+  uint32_t *start = hashtable->start;
+  uint32_t *end = hashtable->end;
+
+  // start from what is remaining
+  tuple_t * output = outbuf->tuple + outbuf->tuples;
+  tuple_t * outend = outbuf->tuple + Params::kMaxTuples;
+  for (uint64_t i = 0; i != input_->tuples; ++i) {
+    uint32_t idx = mhash(stuple[i].key, mask, shift);
+    for (uint64_t j = start[idx]; j != end[idx]; ++j) {
+      if (stuple[i].key == rtuple[j].key) {
+        output->key = (intkey_t)stuple[i].payload;
+        output->payload = (intkey_t)rtuple[i].payload;
+        output++;
+        if (output == outend) {
+          outbuf->tuples = Params::kMaxTuples;
+          FlushBuffer(my->buffer->table, outbuf, my->env);
+          
+          outbuf = my->memm->GetPartition();
+          outbuf->radix = input_->radix;
+          output = outbuf->tuple;
+          outend = outbuf->tuple + Params::kMaxTuples;
+          my->buffer->partition[0] = outbuf;
+        }
+      }
+    }
+  }
+
+  // set buffer size
+  outbuf->tuples = output - outbuf->tuple;
 }
 
 
-void BuildTask::Finish(thread_t* my, hashtable_t *ht)
-{
-  partition_t * htp = partition_init(my->node_id);
-  htp->hashtable = ht;
-  htp->radix = radix_;
-  htp->ready = true;
-
-  // hash table partition
-  out_->AddPartition(htp);
-
-  // Commit
-  in_->Commit(in_->GetPartitionsByKey(radix_).size());
-
-
-  // We create a new probe task on this node
-  // Taskqueue *queue = my->node->queue;
-  // Task *task = new ProbeTask(OpProbe, radix_);
-  // queue->AddTask(probe_->id(), task);
-
-  // check if I am the last one to finish?
-  if (!in_->done())
-    return;
-
-  // set the output hashtable table to ready
-  out_->set_ready();
-
-  if (out_->type() == OpNone) {
-    my->env->set_done();
-    return;
-  }
-}
-
-
-
-
-
-/*
-  void UnitProbeTask::ProbeBlock(thread_t *my, block_t block, hashtable_t *ht)
-  {
-  const uint32_t MASK = (ht->nbuckets-1) << (Params::kNumRadixBits);
-  int *bucket = ht->bucket;
-  entry_t *next = ht->next;  
-
-  // output buffer
-  int buffer_id = my->tid * Params::kFanoutPass1 + part_->key();
-  Partition *outp = out_->GetBuffer(buffer_id);
-
-  tuple_t *tuple = block.tuples;
-  for(uint32_t i = 0; i < block.size; i++, tuple++){
-  uint32_t idx = HASH_BIT_MODULO(tuple->key, MASK, Params::kNumRadixBits);
-  for(int hit = bucket[idx]; hit > 0; hit = next[hit-1].next){
-
-  if(tuple->key == next[hit-1].tuple.key){
-  // V1: check output for every match
-
-  // there is no space
-  if (!outp || Params::kPartitionSize == outp->size()) {
-  // if the buffer is full
-  if (outp)
-  out_->AddPartition(outp);
-
-  // create a new buffer
-  // switch the output buffer to the new one
-  #ifdef PRE_ALLOC
-  Partition *np = my->recycler->GetEmptyPartition();
-  np->set_key(part_->key());
-  #else
-  Partition *np = new Partition(my->node_id, part_->key());
-  np->Alloc();
-  #endif
-
-  out_->SetBuffer(buffer_id, np);
-  outp = np;
-  }
-  tuple_t jr;
-  jr.key = tuple->payload;
-  jr.payload = next[hit-1].tuple.payload;
-  outp->Append(jr);
-
-  // tuple_t *t = &outp->tuples()[outp->size()];
-  //   t->key = tuple->payload;
-  //   t->payload = next[hit-1].tuple.payload;
-  //   outp->set_size(outp->size() + 1);
-  }      
-  }
-  }
-  }
-*/
-
-// TODO: unrolling the loop
+// First write a version without output
 void UnitProbeTask::Run(thread_t *my)
 {
-  // int key = part_->key();
+  int radix = input_->radix;
+  Table *buildtable = my->env->build_table();
+  list<partition_t*> &htps = buildtable->GetPartitionsByKey(radix);
+  assert(htps.size() == 1);
+  hashtable_t *hashtable = htps.front()->hashtable;
 
-  // hashtable_t *ht = build_->GetPartitionsByKey(key).front()->hashtable();
+  DoJoin(hashtable, my);
 
-
-  // // process in blocks
-  // while (!part_->done()) {
-  //   block_t block = part_->NextBlock();
-  //   ProbeBlock(my, block, ht);    
-  // }
-
-  // Finish(my);
+  Finish(my);
 }
 
 void UnitProbeTask::Finish(thread_t* my)
@@ -422,34 +403,32 @@ void UnitProbeTask::Finish(thread_t* my)
   if (!in_->done())
     return;
 
-  // Finish all remaining buffered partitions
-  // for (int node = 0; node < my->env->nnodes(); node++) {
-  //   for (int i = 0; i < out_->nbuffers(); i++) {
-  //     partition_t *outp = out_->GetBuffer(node, i);
-  //     if (outp)
-  //       out_->AddPartition(outp);
-  //   }
-  // }
+  // Flush buffers
+  // force flush only if we are the last operation
+  thread_t * thread = my->env->threads();
+  for (int tid = 0; tid != my->env->nthreads(); ++tid) {
+    pthread_mutex_lock(&thread[tid].lock);
+    buffer_t *buffer = thread[tid].buffer; // NEED a latch to do this work
+    // force flush all remaining buffers
+    if (buffer && buffer->table == out_) {
+      for (int i = 0; i != buffer->partitions; ++i)
+        if (buffer->partition[i]->tuples != 0)
+          FlushBuffer(buffer->table, buffer->partition[i], my->env);
+      buffer_destroy(buffer);
+      thread[tid].buffer = NULL;
+    }
+    pthread_mutex_unlock(&thread[tid].lock);
+  }
+
 
   // set output table to ready
   out_->set_ready();
 
   // check if there is no more work
-  if (out_->type() == OpNone) {
+  if (out_->type() == OpNone)
+    my->env->commit();
+
+  if (my->env->queries() == 0)
     my->env->set_done();
-    return;
-  }
 
-  // Unblock next operator
-  // Only used in multi joins
-  node_t *nodes = my->env->nodes();
-  for (int node = 0; node < my->env->nnodes(); node++)
-    nodes[node].queue->Unblock(out_->id());
-}
-
-
-void ProbeTask::Run(thread_t *my)
-{
-  //  Tasklist *probes = my->env->probes()[key_];
-  my->batch_task = this;
 }
