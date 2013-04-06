@@ -16,10 +16,10 @@ char const *DEFAULT_EVENTS[] = {
     "PAPI_TOT_INS", /* total instructions completed */
   //  "PAPI_L1_ICM",
    /* "PAPI_L1_DCM", */
-   /*   "PAPI_L2_DCM", */
-    "PAPI_L3_TCM", /* Data TLB misses */
-    "PAPI_TLB_DM", /* Data TLB misses */
-  //    "PAPI_BR_MSP", /* conditional branch mispredicted */
+     "PAPI_L2_DCM",
+  //    "PAPI_L3_TCM", /* Data TLB misses */
+  //    "PAPI_TLB_DM", /* Data TLB misses */
+     "PAPI_BR_MSP", /* conditional branch mispredicted */
 };
 
 int NUM_EVENTS = 0;

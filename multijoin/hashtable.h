@@ -23,8 +23,7 @@ struct hashtable_t {
 struct hashtable_t {
   partition_t * data;
   size_t tuples;
-  uint32_t * start;
-  uint32_t * end;
+  uint32_t * sum;
   size_t partitions;
 };
 #endif

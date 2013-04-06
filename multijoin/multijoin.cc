@@ -229,20 +229,25 @@ void Run(Environment *env)
   thread_t *args = env->threads();
   perf_counter_t partition_aggr = PERF_COUNTER_INITIALIZER;
   perf_counter_t build_aggr = PERF_COUNTER_INITIALIZER;
+  perf_counter_t probe_aggr = PERF_COUNTER_INITIALIZER;
   perf_counter_t total_aggr = PERF_COUNTER_INITIALIZER;
 
   for (int i = 0; i != env->nthreads(); ++i) {
     perf_counter_aggr(&partition_aggr, args[i].stage_counter[0]);
     perf_counter_aggr(&build_aggr, args[i].stage_counter[1]);
+    perf_counter_aggr(&probe_aggr, args[i].stage_counter[2]);
     perf_counter_aggr(&total_aggr, args[i].total_counter);
-    logging("Thread[%d] partition time: %ld usec\n", i, args[i].stage_counter[0].tick);
-    logging("Thread[%d] build time: %ld usec\n", i, args[i].stage_counter[1].tick);
+    logging("Thread[%d] partition: %ld usec\n", i, args[i].stage_counter[0].tick);
+    logging("Thread[%d] build: %ld usec\n", i, args[i].stage_counter[1].tick);
+    logging("Thread[%d] probe: %ld usec\n", i, args[i].stage_counter[2].tick);
     logging("Thread[%d] time: %ld  usec\n", i, args[i].total_counter.tick);
   }
   logging("Aggregate partition counter:\n");
   perf_print(partition_aggr);
   logging("Aggregate build counter:\n");
   perf_print(build_aggr);
+  logging("Aggregate probe counter:\n");
+  perf_print(probe_aggr);
   logging("Aggregate total counter:\n");
   perf_print(total_aggr);
 #endif

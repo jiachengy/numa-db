@@ -25,7 +25,11 @@ hashtable_t * BuildTask::Build(thread_t * my)
   int shift = Params::kNumRadixBits;
   int32_t mask  = (partitions-1) << shift;
 
-  uint64_t *hist   = (uint64_t*) calloc(partitions, sizeof(uint64_t));
+  uint32_t *hist   = (uint32_t*) calloc(partitions, sizeof(uint32_t));
+  uint32_t *sum   = (uint32_t*) calloc(partitions + 1, sizeof(uint32_t));
+  // temp output buffer holder
+  tuple_t **part = (tuple_t**)malloc(partitions * sizeof(tuple_t*));
+
   for(list<partition_t*>::iterator it = parts.begin();
       it != parts.end(); ++it ) {
     tuple_t * tuple = (*it)->tuple;
@@ -35,12 +39,6 @@ hashtable_t * BuildTask::Build(thread_t * my)
       hist[hash]++;
     }
   }
-  
-  // temp output buffer holder
-  tuple_t **part = (tuple_t**)malloc(partitions * sizeof(tuple_t*));
-  // index start, index end
-  uint32_t *part_start = (uint32_t*)malloc(partitions * sizeof(uint32_t));
-  uint32_t *part_end = (uint32_t*)malloc(partitions * sizeof(uint32_t));
 
   // TODO: consider overflow hash tables
   assert(total_tuples <= Params::kMaxTuples);
@@ -49,10 +47,10 @@ hashtable_t * BuildTask::Build(thread_t * my)
 
   /* prefix sum on histogram */
   for( uint32_t i = 0; i != partitions; i++ ) {
-    part[i] = i ? part[i-1] + hist[i-1] : outp->tuple;
-    part_start[i] = i ? part_start[i-1] + hist[i-1] : 0;
-    part_end[i] = part_start[i] + hist[i];
+    sum[i] = i ? sum[i-1] + hist[i-1] : 0;
+    part[i] = outp->tuple + sum[i];
   }
+  sum[partitions] = total_tuples;
 
   for(list<partition_t*>::iterator it = parts.begin();
       it != parts.end(); ++it ) {
@@ -66,29 +64,28 @@ hashtable_t * BuildTask::Build(thread_t * my)
   hashtable_t * ht = (hashtable_t*)malloc(sizeof(hashtable_t));
   ht->data = outp;
   ht->tuples = total_tuples;
-  ht->start = part_start;
-  ht->end = part_end;
+  ht->sum = sum;
   ht->partitions = partitions;
 
   /*
   // validate
   long long sum = 0;
   for(list<partition_t*>::iterator it = parts.begin();
-      it != parts.end(); ++it ) {
-    tuple_t * tuple = (*it)->tuple;
-    size_t tuples = (*it)->tuples;
-    for (uint64_t i = 0; i != tuples ; ++i) {
-      sum += tuple[i].key;
-    }
+  it != parts.end(); ++it ) {
+  tuple_t * tuple = (*it)->tuple;
+  size_t tuples = (*it)->tuples;
+  for (uint64_t i = 0; i != tuples ; ++i) {
+  sum += tuple[i].key;
+  }
   }
   long long sum1 = 0;
   tuple_t * tuple = outp->tuple;
   for (uint32_t i = 0 ; i != partitions ; ++i) {
-    assert(part_end[i] == part_start[i] + hist[i]);
-    for (uint32_t j = part_start[i]; j != part_end[i]; ++j) {
-      assert(mhash(tuple[j].key, mask, shift) == i);
-      sum1 += tuple[j].key;
-    }
+  assert(part_end[i] == part_start[i] + hist[i]);
+  for (uint32_t j = part_start[i]; j != part_end[i]; ++j) {
+  assert(mhash(tuple[j].key, mask, shift) == i);
+  sum1 += tuple[j].key;
+  }
   }
   assert(sum == sum1);
   */
@@ -109,7 +106,6 @@ void BuildTask::Run(thread_t *my)
 
   perf_counter_t after = perf_read(my->perf);
   perf_counter_t state = perf_counter_diff(before, after);
-
   perf_counter_aggr(&my->stage_counter[1], state);
 }
 
@@ -323,8 +319,8 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
   int32_t mask  = (partitions-1) << shift;
 
   // check buffer compatibility
-  pthread_mutex_lock(&my->lock);
   if (!buffer_compatible(my->buffer, out_, input_->radix)) {
+    pthread_mutex_lock(&my->lock);
     // flush old buffers
     if (my->buffer) {
       partition_t **buffer = my->buffer->partition;
@@ -335,10 +331,8 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
     }
     // we only need one buffer
     my->buffer = buffer_init(out_, input_->radix, 1);
+    pthread_mutex_unlock(&my->lock);
   }
-  pthread_mutex_unlock(&my->lock);
-
-  assert(my->buffer->partitions == 1);
 
   if (my->buffer->partition[0] == NULL) {
     my->buffer->partition[0] = my->memm->GetPartition();
@@ -349,15 +343,16 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
 
   tuple_t * stuple = input_->tuple;
   tuple_t * rtuple = hashtable->data->tuple;
-  uint32_t *start = hashtable->start;
-  uint32_t *end = hashtable->end;
+  uint32_t * sum = hashtable->sum;
 
+  //  long matches = 0;
   // start from what is remaining
   tuple_t * output = outbuf->tuple + outbuf->tuples;
   tuple_t * outend = outbuf->tuple + Params::kMaxTuples;
   for (uint64_t i = 0; i != input_->tuples; ++i) {
     uint32_t idx = mhash(stuple[i].key, mask, shift);
-    for (uint64_t j = start[idx]; j != end[idx]; ++j) {
+    uint64_t j = sum[idx], end = sum[idx+1];
+    for (; j != end; ++j) {
       if (stuple[i].key == rtuple[j].key) {
         output->key = (intkey_t)stuple[i].payload;
         output->payload = (intkey_t)rtuple[i].payload;
@@ -372,27 +367,35 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
           outend = outbuf->tuple + Params::kMaxTuples;
           my->buffer->partition[0] = outbuf;
         }
+        //        matches++;
       }
     }
   }
 
   // set buffer size
   outbuf->tuples = output - outbuf->tuple;
+ //  outbuf->tuples = matches;
 }
 
 
 // First write a version without output
 void UnitProbeTask::Run(thread_t *my)
 {
+  perf_counter_t before = perf_read(my->perf);
+
   int radix = input_->radix;
   Table *buildtable = my->env->build_table();
   list<partition_t*> &htps = buildtable->GetPartitionsByKey(radix);
-  assert(htps.size() == 1);
   hashtable_t *hashtable = htps.front()->hashtable;
 
   DoJoin(hashtable, my);
 
   Finish(my);
+
+  perf_counter_t after = perf_read(my->perf);
+  perf_counter_t state = perf_counter_diff(before, after);
+  perf_counter_aggr(&my->stage_counter[2], state);
+
 }
 
 void UnitProbeTask::Finish(thread_t* my)

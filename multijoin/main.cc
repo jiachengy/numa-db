@@ -34,7 +34,7 @@ int main(int argc, char *argv[])
   relation_t *relS = parallel_build_relation_fk(ssize, rsize, 1, 1);
   logging("Building S table with %ld tuples done.\n", ssize);
 
-  size_t capacity = rsize * 64;
+  size_t capacity = rsize * 128;
   Environment *env = new Environment(nodes, nthreads * nodes, capacity);
 
   logging("Environment initialized.\n");
