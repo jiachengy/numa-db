@@ -247,7 +247,8 @@ cpu-mapping.txt
 #include "parallel_radix_join.h"  /* parallel radix joins: RJ, PRO, PRH, PRHO */
 #include "generator.h"            /* create_relation_xk */
 
-#include "perf_counters.h" /* PCM_x */
+#include "perf.h"
+/* #include "perf_counters.h" /\* PCM_x *\/ */
 #include "affinity.h"      /* pthread_attr_setaffinity_np & sched_setaffinity */
 #include "../config.h"     /* autoconf header */
 
@@ -331,8 +332,8 @@ main(int argc, char ** argv)
     cmd_params.algo     = &algos[0]; /* PRO */
     cmd_params.nthreads = 2;
     /* default dataset is Workload B (described in paper) */
-    cmd_params.r_size   = 128000000;
-    cmd_params.s_size   = 128000000;
+    cmd_params.r_size   = 16 * 1024 * 1024; //128000000;
+    cmd_params.s_size   = 16 * 1024 * 1024; //128000000;
     cmd_params.r_seed   = 12345;
     cmd_params.s_seed   = 54321;
     cmd_params.skew     = 0.0;
@@ -346,8 +347,9 @@ main(int argc, char ** argv)
     parse_args(argc, argv, &cmd_params);
 
 #ifdef PERF_COUNTERS
-    PCM_CONFIG = cmd_params.perfconf;
-    PCM_OUT    = cmd_params.perfout;
+    /* PCM_CONFIG = cmd_params.perfconf; */
+    /* PCM_OUT    = cmd_params.perfout; */
+    perf_lib_init(cmd_params.perfconf, cmd_params.perfout);
 #endif
     
     /* create relation R */
@@ -370,7 +372,8 @@ main(int argc, char ** argv)
         create_relation_nonunique(&relR, cmd_params.r_size, cmd_params.r_size);
     }
     else {
-        create_relation_pk(&relR, cmd_params.r_size);
+      create_relation_pk(&relR, cmd_params.r_size);
+      //      create_relation_fk(&relR, cmd_params.r_size, cmd_params.r_size);
     }
     printf("OK \n");
 
@@ -417,6 +420,10 @@ main(int argc, char ** argv)
     /* clean-up */
     delete_relation(&relR);
     delete_relation(&relS);
+
+#ifdef PERF_COUNTERS
+    perf_lib_cleanup();
+#endif
 
     return 0;
 }

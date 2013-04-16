@@ -6,25 +6,26 @@
 
 #include "perf.h"
 
-#if defined(USE_PERF)
+#if defined(PERF_COUNTERS)
 
 char *PERF_CONFIG;
 char *PERF_OUT;
 
 char const *DEFAULT_EVENTS[] = {
   "PAPI_TOT_CYC", /* total cpu cycles */
-    "PAPI_TOT_INS", /* total instructions completed */
-  //  "PAPI_L1_ICM",
-   /* "PAPI_L1_DCM", */
-  //     "PAPI_L2_DCM",
-     "PAPI_L3_TCM", /* Data TLB misses */
-     "PAPI_TLB_DM", /* Data TLB misses */
-  //     "PAPI_BR_MSP", /* conditional branch mispredicted */
+   "PAPI_TOT_INS", /* total instructions completed */
+    /* "PAPI_L1_DCM", */
+    /* "PAPI_L2_DCM", */
+   "PAPI_L3_TCM", /* Data TLB misses */
+  "PAPI_TLB_DM", /* Data TLB misses */
+  //  "DTLB_LOAD_MISSES:MISS_CAUSES_A_WALK",
+  //  "DTLB_STORE_MISSES:MISS_CAUSES_A_WALK",
+  //  "DTLB_STORE_MISSES",
+    /* "PAPI_BR_MSP", /\* conditional branch mispredicted *\/ */
 };
 
 int NUM_EVENTS = 0;
 char **PERF_EVENT_NAMES;
-perf_counter_t PERF_COUNTER_INITIALIZER;
 
 static char *
 mystrdup(const char *s)
@@ -54,9 +55,6 @@ perf_lib_init(const char *perfcfg, const char *perfout)
     PERF_OUT = mystrdup(perfout);
 
   int max_counters = PAPI_num_counters();
-  if (max_counters > MAX_PERF_EVENTS)
-    max_counters = MAX_PERF_EVENTS;
-
   PERF_EVENT_NAMES = (char**)malloc(sizeof(char*) * max_counters);  
   assert(PERF_EVENT_NAMES != NULL);
   memset(PERF_EVENT_NAMES, 0x0, sizeof(char*) * max_counters);
@@ -87,9 +85,6 @@ perf_lib_init(const char *perfcfg, const char *perfout)
     for (int i = 0; i < NUM_EVENTS; i++)
       PERF_EVENT_NAMES[i] = mystrdup(DEFAULT_EVENTS[i]);
   }
-
-  for (int i = 0; i != NUM_EVENTS; ++i)
-    PERF_COUNTER_INITIALIZER.value[i] = 0;
 }
 
 
@@ -122,12 +117,12 @@ perf_start(perf_t *perf)
   assert(retval == PAPI_OK);
 }
 
-/* void */
-/* perf_reset(perf_t *perf) */
-/* { */
-/*   int retval = PAPI_reset(perf->EventSet); */
-/*   assert(retval == PAPI_OK); */
-/* } */
+void
+perf_reset(perf_t *perf)
+{
+  int retval = PAPI_reset(perf->EventSet);
+  assert(retval == PAPI_OK);
+}
 
 void
 perf_stop(perf_t *perf)
@@ -137,7 +132,7 @@ perf_stop(perf_t *perf)
 }
 
 void
-perf_print(perf_counter_t counter)
+perf_print(perf_t *perf)
 {
   FILE *out;
 
@@ -149,33 +144,30 @@ perf_print(perf_counter_t counter)
     out = stdout;
 
   for (int i = 0; i < NUM_EVENTS; i++)
-    fprintf(out, "%s: %lld\n", PERF_EVENT_NAMES[i], counter.value[i]);
+    fprintf(out, "%s: %lld\n", PERF_EVENT_NAMES[i], perf->values[i]);
 }
 
-/* void */
-/* perf_accum(perf_t *perf) */
-/* { */
-/*   int retval = PAPI_accum(perf->EventSet, perf->values); */
-/*   assert(retval == PAPI_OK); */
-/* } */
+void
+perf_accum(perf_t *perf)
+{
+  int retval = PAPI_accum(perf->EventSet, perf->values);
+  assert(retval == PAPI_OK);
+}
 
-perf_counter_t
+void
 perf_read(perf_t *perf)
 {
-  perf_counter_t counter;
-  counter.tick = PAPI_get_real_usec();
-  int retval = PAPI_read(perf->EventSet, (counter_t*)&counter.value);
+  int retval = PAPI_read(perf->EventSet, perf->values);
   assert(retval == PAPI_OK);
-  return counter;
 }
 
 
-/* void */
-/* perf_aggregate(perf_t *total, perf_t *perf) */
-/* { */
-/*   for (int i = 0; i < NUM_EVENTS; i++) */
-/*     total->values[i] += perf->values[i]; */
-/* } */
+void
+perf_aggregate(perf_t *total, perf_t *perf)
+{
+  for (int i = 0; i < NUM_EVENTS; i++)
+    total->values[i] += perf->values[i];
+}
 
 perf_t*
 perf_init()
@@ -222,8 +214,8 @@ perf_init()
 
   perf_t *perf = (perf_t*)malloc(sizeof(perf_t));
   perf->EventSet = EventSet;
-  /* perf->values = (counter_t*)malloc(sizeof(counter_t) * NUM_EVENTS); */
-  /* memset(perf->values, 0x0, sizeof(counter_t) * NUM_EVENTS); */
+  perf->values = (counter_t*)malloc(sizeof(counter_t) * NUM_EVENTS);
+  memset(perf->values, 0x0, sizeof(counter_t) * NUM_EVENTS);
 
   return perf;
 }
@@ -241,22 +233,7 @@ perf_destroy(perf_t *perf)
   free(perf);
 }
 
-void
-perf_counter_aggr(perf_counter_t *lhs, perf_counter_t rhs)
-{
-  for (int i = 0; i != NUM_EVENTS; ++i)
-    lhs->value[i] += rhs.value[i];
-  lhs->tick += rhs.tick;
-}
 
-perf_counter_t perf_counter_diff(perf_counter_t before, perf_counter_t after)
-{
-  perf_counter_t result;
-  result.tick = after.tick - before.tick;
-  for (int i = 0; i != NUM_EVENTS; ++i)
-    result.value[i] = after.value[i] - before.value[i];
-  return result;
-}
 
 
 #endif

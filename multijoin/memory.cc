@@ -4,8 +4,8 @@
 #include "memory.h"
 #include "util.h" // alloc, dealloc
 
-Memory::Memory(int node, size_t capacity)
-  : node_(node), capacity_(capacity)
+Memory::Memory(int node, size_t capacity, size_t capacity_hist)
+  : node_(node), capacity_(capacity), capacity_hist_(capacity_hist)
 {
   node_bind(node);
   
@@ -13,10 +13,17 @@ Memory::Memory(int node, size_t capacity)
   memset(base_, 0x0, sizeof(tuple_t) * capacity_);
   size_ = 0;
 
+  base_hist_ = (uint32_t*)alloc(sizeof(uint32_t) * capacity_hist_);
+  memset(base_hist_, 0x0, sizeof(uint32_t) * capacity_hist_);
+  size_hist_ = 0;
+
   int max_partitions = capacity / Params::kMaxTuples;
   logging("max partitions: %d\n", max_partitions);
 
+  int max_hts = Params::kFanoutTotal;
+  
   Alloc(max_partitions);
+  AllocHT(max_hts);
 
   pthread_mutex_init(&mutex_, NULL);
 }
@@ -27,12 +34,13 @@ Memory::~Memory() {
     freelist_.pop();
   }
 
-  while (!freehts_.empty()) {
-    delete freehts_.front();
-    freehts_.pop();
+  while (!freeht_.empty()) {
+    delete freeht_.front();
+    freeht_.pop();
   }
 
   dealloc(base_, sizeof(tuple_t) * capacity_);
+  dealloc(base_hist_, sizeof(uint32_t) * capacity_hist_);
 
   pthread_mutex_destroy(&mutex_);
 }
@@ -50,26 +58,16 @@ Memory::Alloc(size_t size)
   }
 }
 
-// void
-// Memory::AllocHT(size_t size)
-// {
-//   size_t htsz;
-//   for (uint32_t i = 0; i < size; i++) {
-//     partition_t *p = partition_init(node_);
-//     hashtable_t *ht = hashtable_init_noalloc(Params::kMaxHtTuples);
-//     ht->next = (entry_t*)(data_ + cur_);
-//     cur_ += (sizeof(entry_t) * ht->ntuples);
-//     ht->bucket = (int*)(data_ + cur_);
-//     cur_ += (sizeof(int) * ht->nbuckets);
-
-//     assert(cur_ < capacity_);
-
-//     p->hashtable = ht;
-//     freehts_.push(p);
-
-//     htsz = sizeof(entry_t) * ht->ntuples + sizeof(int) * ht->nbuckets;
-//   }
-// }
+void
+Memory::AllocHT(size_t size)
+{
+  for (uint32_t i = 0; i < size; i++) {
+    partition_t *p = partition_init(node_);
+    hashtable_t * ht = (hashtable_t*)malloc(sizeof(hashtable_t));
+    p->hashtable = ht;
+    freeht_.push(p);
+  }
+}
 
 
 partition_t*
@@ -88,23 +86,37 @@ Memory::GetPartition()
   return p;
 }
 
-// partition_t*
-// Memory::GetEmptyHT()
-// {
-//   pthread_mutex_lock(&mutex_);
+partition_t*
+Memory::GetHashtable(size_t tuples, size_t partitions)
+{
+  pthread_mutex_lock(&mutex_);
 
-//   if (freehts_.empty()) {
-//     AllocHT(kAllocUnit);
-//     assert(false);
-//   }
+  if (freeht_.empty())
+    assert(false);
 
-//   partition_t *p = freehts_.front();
-//   freehts_.pop();
+  if (freelist_.empty())
+    assert(false);
 
-//   pthread_mutex_unlock(&mutex_);
+  partition_t *dp = freelist_.front();
+  freelist_.pop();
 
-//   return p;
-// }
+  partition_t *htp = freeht_.front();
+  freeht_.pop();
+
+  uint32_t * sum = &base_hist_[size_hist_];
+  size_hist_ += partitions;
+  assert(size_hist_ < capacity_hist_);
+
+  pthread_mutex_unlock(&mutex_);
+
+  assert(tuples < Params::kMaxTuples);
+  htp->hashtable->tuple = dp->tuple;
+  htp->hashtable->tuples = tuples;
+  htp->hashtable->sum = sum;
+  htp->hashtable->partitions = partitions - 1;
+
+  return htp;
+}
 
 	
 // put back the partition for recycling

@@ -83,8 +83,8 @@ class BuildTask : public Task
   // information required to create the probing task
   Table *probe_;
 
-  hashtable_t* Build(thread_t * my);
-  void Finish(thread_t *my, hashtable_t *ht);
+  partition_t* Build(thread_t * my);
+  void Finish(thread_t *my, partition_t *htp);
 
  public:
  BuildTask(Table *probe, int radix) : Task(OpBuild) {

@@ -50,17 +50,19 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 @KEY_8B_TRUE@am__append_1 = -DKEY_8B
 @PERF_COUNTERS_TRUE@am__append_2 = -DPERF_COUNTERS
-@PERF_COUNTERS_TRUE@am__append_3 = -lperf
-@PERF_COUNTERS_TRUE@am__append_4 = -I../lib/intel-pcm-1.7/ -L../lib/intel-pcm-1.7/lib/
-@PERF_COUNTERS_TRUE@am__append_5 = -lperf
-@DEBUG_TRUE@am__append_6 = -DDEBUG
-@PADDEDBUCKET_TRUE@am__append_7 = -DPADDED_BUCKET=1
-@PADDEDBUCKET_FALSE@am__append_8 = -DPADDED_BUCKET=0
-@NOTIMING_TRUE@am__append_9 = -DNO_TIMING
-@SYNCSTATS_TRUE@am__append_10 = -DSYNCSTATS
-@SKEW_HANDLING_TRUE@am__append_11 = -DSKEW_HANDLING
-@PREFETCH_NPJ_TRUE@am__append_12 = -DPREFETCH_NPJ
-@USE_SWWC_OPTIMIZED_PART_TRUE@am__append_13 = -DUSE_SWWC_OPTIMIZED_PART
+#MYLDFLAGS += -lperf
+#MISC += -I../lib/intel-pcm-1.7/ -L../lib/intel-pcm-1.7/lib/
+#LIBS += -lperf
+@PERF_COUNTERS_TRUE@am__append_3 = -lpapi
+@PERF_COUNTERS_TRUE@am__append_4 = -lpapi
+@DEBUG_TRUE@am__append_5 = -DDEBUG
+@PADDEDBUCKET_TRUE@am__append_6 = -DPADDED_BUCKET=1
+@PADDEDBUCKET_FALSE@am__append_7 = -DPADDED_BUCKET=0
+@NOTIMING_TRUE@am__append_8 = -DNO_TIMING
+@SYNCSTATS_TRUE@am__append_9 = -DSYNCSTATS
+@SKEW_HANDLING_TRUE@am__append_10 = -DSKEW_HANDLING
+@PREFETCH_NPJ_TRUE@am__append_11 = -DPREFETCH_NPJ
+@USE_SWWC_OPTIMIZED_PART_TRUE@am__append_12 = -DUSE_SWWC_OPTIMIZED_PART
 bin_PROGRAMS = mchashjoins$(EXEEXT)
 subdir = src
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in \
@@ -77,10 +79,9 @@ am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am_mchashjoins_OBJECTS = mchashjoins-no_partitioning_join.$(OBJEXT) \
 	mchashjoins-parallel_radix_join.$(OBJEXT) \
-	mchashjoins-perf_counters.$(OBJEXT) \
 	mchashjoins-cpu_mapping.$(OBJEXT) \
 	mchashjoins-genzipf.$(OBJEXT) mchashjoins-generator.$(OBJEXT) \
-	mchashjoins-main.$(OBJEXT)
+	mchashjoins-perf.$(OBJEXT) mchashjoins-main.$(OBJEXT)
 mchashjoins_OBJECTS = $(am_mchashjoins_OBJECTS)
 mchashjoins_LDADD = $(LDADD)
 mchashjoins_LINK = $(CCLD) $(mchashjoins_CFLAGS) $(CFLAGS) \
@@ -133,7 +134,7 @@ INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 LDFLAGS = @LDFLAGS@
 LIBOBJS = @LIBOBJS@
-LIBS = @LIBS@ $(am__append_5)
+LIBS = @LIBS@ $(am__append_4)
 LTLIBOBJS = @LTLIBOBJS@
 MAKEINFO = @MAKEINFO@
 MKDIR_P = @MKDIR_P@
@@ -194,12 +195,12 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign
-DEFINES = $(am__append_1) $(am__append_2) $(am__append_6) \
-	$(am__append_7) $(am__append_8) $(am__append_9) \
-	$(am__append_10) $(am__append_11) $(am__append_12) \
-	$(am__append_13)
+DEFINES = $(am__append_1) $(am__append_2) $(am__append_5) \
+	$(am__append_6) $(am__append_7) $(am__append_8) \
+	$(am__append_9) $(am__append_10) $(am__append_11) \
+	$(am__append_12)
 MYLDFLAGS = $(am__append_3)
-MISC = $(am__append_4)
+MISC = 
 
 # if available, add the following flags
 # -mavx, -mtune=niagara2, -mcpu=ultrasparc
@@ -210,12 +211,14 @@ AM_LDFLAGS =
 mchashjoins_SOURCES = npj_params.h prj_params.h types.h npj_types.h 	\
 			no_partitioning_join.h no_partitioning_join.c 	\
 			parallel_radix_join.h parallel_radix_join.c   	\
-			perf_counters.h perf_counters.c			\
 			cpu_mapping.h cpu_mapping.c 			\
 			genzipf.h genzipf.c generator.h generator.c 	\
 			lock.h rdtsc.h task_queue.h barrier.h affinity.h\
+			perf.h perf.c \
 			main.c
 
+
+#			perf_counters.h perf_counters.c
 mchashjoins_LDFLAGS = $(AM_LDFLAGS) $(MYLDFLAGS) -pthread
 mchashjoins_CFLAGS = $(AM_CFLAGS) $(MISC)
 all: all-am
@@ -308,7 +311,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mchashjoins-main.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mchashjoins-no_partitioning_join.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mchashjoins-parallel_radix_join.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mchashjoins-perf_counters.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mchashjoins-perf.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
@@ -352,20 +355,6 @@ mchashjoins-parallel_radix_join.obj: parallel_radix_join.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -c -o mchashjoins-parallel_radix_join.obj `if test -f 'parallel_radix_join.c'; then $(CYGPATH_W) 'parallel_radix_join.c'; else $(CYGPATH_W) '$(srcdir)/parallel_radix_join.c'; fi`
 
-mchashjoins-perf_counters.o: perf_counters.c
-@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -MT mchashjoins-perf_counters.o -MD -MP -MF $(DEPDIR)/mchashjoins-perf_counters.Tpo -c -o mchashjoins-perf_counters.o `test -f 'perf_counters.c' || echo '$(srcdir)/'`perf_counters.c
-@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/mchashjoins-perf_counters.Tpo $(DEPDIR)/mchashjoins-perf_counters.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='perf_counters.c' object='mchashjoins-perf_counters.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -c -o mchashjoins-perf_counters.o `test -f 'perf_counters.c' || echo '$(srcdir)/'`perf_counters.c
-
-mchashjoins-perf_counters.obj: perf_counters.c
-@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -MT mchashjoins-perf_counters.obj -MD -MP -MF $(DEPDIR)/mchashjoins-perf_counters.Tpo -c -o mchashjoins-perf_counters.obj `if test -f 'perf_counters.c'; then $(CYGPATH_W) 'perf_counters.c'; else $(CYGPATH_W) '$(srcdir)/perf_counters.c'; fi`
-@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/mchashjoins-perf_counters.Tpo $(DEPDIR)/mchashjoins-perf_counters.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='perf_counters.c' object='mchashjoins-perf_counters.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -c -o mchashjoins-perf_counters.obj `if test -f 'perf_counters.c'; then $(CYGPATH_W) 'perf_counters.c'; else $(CYGPATH_W) '$(srcdir)/perf_counters.c'; fi`
-
 mchashjoins-cpu_mapping.o: cpu_mapping.c
 @am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -MT mchashjoins-cpu_mapping.o -MD -MP -MF $(DEPDIR)/mchashjoins-cpu_mapping.Tpo -c -o mchashjoins-cpu_mapping.o `test -f 'cpu_mapping.c' || echo '$(srcdir)/'`cpu_mapping.c
 @am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/mchashjoins-cpu_mapping.Tpo $(DEPDIR)/mchashjoins-cpu_mapping.Po
@@ -407,6 +396,20 @@ mchashjoins-generator.obj: generator.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='generator.c' object='mchashjoins-generator.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -c -o mchashjoins-generator.obj `if test -f 'generator.c'; then $(CYGPATH_W) 'generator.c'; else $(CYGPATH_W) '$(srcdir)/generator.c'; fi`
+
+mchashjoins-perf.o: perf.c
+@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -MT mchashjoins-perf.o -MD -MP -MF $(DEPDIR)/mchashjoins-perf.Tpo -c -o mchashjoins-perf.o `test -f 'perf.c' || echo '$(srcdir)/'`perf.c
+@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/mchashjoins-perf.Tpo $(DEPDIR)/mchashjoins-perf.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='perf.c' object='mchashjoins-perf.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -c -o mchashjoins-perf.o `test -f 'perf.c' || echo '$(srcdir)/'`perf.c
+
+mchashjoins-perf.obj: perf.c
+@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -MT mchashjoins-perf.obj -MD -MP -MF $(DEPDIR)/mchashjoins-perf.Tpo -c -o mchashjoins-perf.obj `if test -f 'perf.c'; then $(CYGPATH_W) 'perf.c'; else $(CYGPATH_W) '$(srcdir)/perf.c'; fi`
+@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/mchashjoins-perf.Tpo $(DEPDIR)/mchashjoins-perf.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='perf.c' object='mchashjoins-perf.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -c -o mchashjoins-perf.obj `if test -f 'perf.c'; then $(CYGPATH_W) 'perf.c'; else $(CYGPATH_W) '$(srcdir)/perf.c'; fi`
 
 mchashjoins-main.o: main.c
 @am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mchashjoins_CFLAGS) $(CFLAGS) -MT mchashjoins-main.o -MD -MP -MF $(DEPDIR)/mchashjoins-main.Tpo -c -o mchashjoins-main.o `test -f 'main.c' || echo '$(srcdir)/'`main.c

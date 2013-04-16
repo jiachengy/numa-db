@@ -21,7 +21,7 @@ struct hashtable_t {
 };
 #else
 struct hashtable_t {
-  partition_t * data;
+  tuple_t * tuple;
   size_t tuples;
   uint32_t * sum;
   size_t partitions;

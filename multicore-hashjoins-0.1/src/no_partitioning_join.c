@@ -27,7 +27,8 @@
 #include "lock.h"               /* lock, unlock */
 #include "cpu_mapping.h"        /* get_cpu_id */
 #ifdef PERF_COUNTERS
-#include "perf_counters.h"      /* PCM_x */
+/* #include "perf_counters.h"      /\* PCM_x *\/ */
+#include "perf.h"
 #endif
 
 #include "barrier.h"            /* pthread_barrier_* */
@@ -94,6 +95,10 @@ struct arg_t {
     /* stats about the thread */
     uint64_t timer1, timer2, timer3;
     struct timeval start, end;
+#endif
+
+#ifdef PERF_COUNTERS
+  perf_t *perf;
 #endif
 } ;
 
@@ -456,10 +461,13 @@ npo_thread(void * param)
     init_bucket_buffer(&overflowbuf);
 
 #ifdef PERF_COUNTERS
-    if(args->tid == 0){
-        PCM_initPerformanceMonitor(NULL, NULL);
-        PCM_start();
-    }
+    perf_register_thread();
+    args->perf = perf_init();
+    perf_start(args->perf);
+    /* if(args->tid == 0){ */
+    /*     PCM_initPerformanceMonitor(NULL, NULL); */
+    /*     PCM_start(); */
+    /* } */
 #endif
     
     /* wait at a barrier until each thread starts and start timer */
@@ -482,12 +490,17 @@ npo_thread(void * param)
     BARRIER_ARRIVE(args->barrier, rv);
 
 #ifdef PERF_COUNTERS
-    if(args->tid == 0){
-      PCM_stop();
-      PCM_log("========== Build phase profiling results ==========\n");
-      PCM_printResults();
-      PCM_start();
-    }
+    /* if(args->tid == 0){ */
+    /*   PCM_stop(); */
+    /*   PCM_log("========== Build phase profiling results ==========\n"); */
+    /*   PCM_printResults(); */
+    /*   PCM_start(); */
+    /* } */
+
+    perf_stop(args->perf);
+    perf_read(args->perf);
+
+    
     /* Just to make sure we get consistent performance numbers */
     BARRIER_ARRIVE(args->barrier, rv);
 #endif
@@ -515,15 +528,16 @@ npo_thread(void * param)
 #endif
 
 #ifdef PERF_COUNTERS
-    if(args->tid == 0) {
-        PCM_stop();
-        PCM_log("========== Probe phase profiling results ==========\n");
-        PCM_printResults();
-        PCM_log("===================================================\n");
-        PCM_cleanup();
-    }
+    /* if(args->tid == 0) { */
+    /*     PCM_stop(); */
+    /*     PCM_log("========== Probe phase profiling results ==========\n"); */
+    /*     PCM_printResults(); */
+    /*     PCM_log("===================================================\n"); */
+    /*     PCM_cleanup(); */
+    /* } */
     /* Just to make sure we get consistent performance numbers */
     BARRIER_ARRIVE(args->barrier, rv);
+    perf_unregister_thread();
 #endif
 
     /* clean-up the overflow buffers */

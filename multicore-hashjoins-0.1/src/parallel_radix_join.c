@@ -26,7 +26,9 @@
 #include "cpu_mapping.h"        /* get_cpu_id */
 #include "rdtsc.h"              /* startTimer, stopTimer */
 #ifdef PERF_COUNTERS
-#include "perf_counters.h"      /* PCM_x */
+/* #include "perf_counters.h"      /\* PCM_x *\/ */
+#include <papi.h>
+#include "perf.h"
 #endif
 
 #include "barrier.h"            /* pthread_barrier_* */
@@ -178,6 +180,12 @@ struct arg_t {
     /** Global synchronization timers, only filled in by thread-0 */
     synctimer_t * globaltimer;
 #endif
+
+
+#ifdef PERF_COUNTERS
+  perf_t *perf;
+#endif
+
 } __attribute__((aligned(CACHE_LINE_SIZE)));
 
 /** holds arguments passed for partitioning */
@@ -690,6 +698,7 @@ void serial_radix_partition(task_t * const task,
 void 
 parallel_radix_partition(part_t * const part) 
 {
+
     const tuple_t * restrict rel    = part->rel;
     int32_t **               hist   = part->hist;
     int32_t *       restrict output = part->output;
@@ -846,6 +855,9 @@ parallel_radix_partition_optimized(part_t * const part)
     const uint32_t MASK    = (fanOut - 1) << R;
     const uint32_t padding = part->padding;
 
+
+
+
     int32_t sum = 0;
     uint32_t i, j;
     int rv;
@@ -939,8 +951,17 @@ parallel_radix_partition_optimized(part_t * const part)
 void * 
 prj_thread(void * param)
 {
+
     arg_t * args   = (arg_t*) param;
     int32_t my_tid = args->my_tid;
+
+
+#ifdef PERF_COUNTERS
+    perf_register_thread();
+    args->perf = perf_init();
+#endif
+
+
 
     const int fanOut = 1 << (NUM_RADIX_BITS / NUM_PASSES);
     const int R = (NUM_RADIX_BITS / NUM_PASSES);
@@ -977,10 +998,13 @@ prj_thread(void * param)
     args->parts_processed = 0;
 
 #ifdef PERF_COUNTERS
-    if(my_tid == 0){
-        PCM_initPerformanceMonitor(NULL, NULL);
-        PCM_start();
-    }
+    /* if(my_tid == 0){ */
+    /*     PCM_initPerformanceMonitor(NULL, NULL); */
+    /*     PCM_start(); */
+    /* } */
+    long long start_usec, end_usec;
+    start_usec = PAPI_get_real_usec();
+    perf_start(args->perf);
 #endif
 
     /* wait at a barrier until each thread starts and then start the timer */
@@ -1017,7 +1041,14 @@ prj_thread(void * param)
 #ifdef USE_SWWC_OPTIMIZED_PART
     parallel_radix_partition_optimized(&part);
 #else
+
+
+    
+    //    start_usec = PAPI_get_real_usec();
     parallel_radix_partition(&part);
+    //    end_usec = PAPI_get_real_usec();
+    //    fprintf(stderr, "time: %d\n", end_usec-start_usec);
+
 #endif
 
     /* 2. partitioning for relation S */
@@ -1032,7 +1063,11 @@ prj_thread(void * param)
 #ifdef USE_SWWC_OPTIMIZED_PART
     parallel_radix_partition_optimized(&part);
 #else
+    //    start_usec = PAPI_get_real_usec();
     parallel_radix_partition(&part);
+    //    end_usec = PAPI_get_real_usec();
+    //    fprintf(stderr, "time: %d\n", end_usec - start_usec);
+
 #endif
 
 
@@ -1040,6 +1075,12 @@ prj_thread(void * param)
     BARRIER_ARRIVE(args->barrier, rv);
 
     /********** end of 1st partitioning phase ******************/
+
+#ifdef PERF_COUNTERS
+
+    BARRIER_ARRIVE(args->barrier, rv);
+#endif
+
 
     /* 3. first thread creates partitioning tasks for 2nd pass */
     if(my_tid == 0) {
@@ -1255,12 +1296,28 @@ prj_thread(void * param)
     DEBUGMSG((my_tid == 0), "Number of join tasks = %d\n", join_queue->count);
 
 #ifdef PERF_COUNTERS
-    if(my_tid == 0){
-        PCM_stop();
-        PCM_log("======= Partitioning phase profiling results ======\n");
-        PCM_printResults();
-        PCM_start();
-    }
+    end_usec = PAPI_get_real_usec();
+
+    perf_stop(args->perf);
+    perf_read(args->perf);
+    perf_print(args->perf);
+
+
+    /* perf_stop(args->perf); */
+    /* perf_read(args->perf); */
+    /* end_usec = PAPI_get_real_usec(); */
+
+    /* if (my_tid == 0) { */
+    /*   fprintf(stderr, "Partitioning time: %lld\n", end_usec - start_usec); */
+    /* } */
+
+    /* if(my_tid == 0){ */
+    /*     PCM_stop(); */
+    /*     PCM_log("======= Partitioning phase profiling results ======\n"); */
+    /*     PCM_printResults(); */
+    /*     PCM_start(); */
+    /* } */
+
     /* Just to make sure we get consistent performance numbers */
     BARRIER_ARRIVE(args->barrier, rv);
 #endif
@@ -1293,14 +1350,17 @@ prj_thread(void * param)
     SYNC_GLOBAL_STOP(&args->globaltimer->finish_time, my_tid);
 
 #ifdef PERF_COUNTERS
-    if(my_tid == 0) {
-        PCM_stop();
-        PCM_log("=========== Build+Probe profiling results =========\n");
-        PCM_printResults();
-        PCM_log("===================================================\n");
-        PCM_cleanup();
-    }
+    /* if(my_tid == 0) { */
+    /*     PCM_stop(); */
+    /*     PCM_log("=========== Build+Probe profiling results =========\n"); */
+    /*     PCM_printResults(); */
+    /*     PCM_log("===================================================\n"); */
+    /*     PCM_cleanup(); */
+    /* } */
     /* Just to make sure we get consistent performance numbers */
+
+    perf_unregister_thread();
+
     BARRIER_ARRIVE(args->barrier, rv);
 #endif
 
@@ -1479,6 +1539,19 @@ join_init_run(relation_t * relR, relation_t * relS, JoinFunction jf, int nthread
     print_timing(args[0].timer1, args[0].timer2, args[0].timer3,
                 relS->num_tuples, result,
                 &args[0].start, &args[0].end);
+
+#ifdef PERF_COUNTERS
+  for (int i = 0; i < nthreads; i++) {
+    fprintf(stderr, "Thread %d:\n", i);
+    perf_print(args[i].perf);
+    if (i != 0) 
+      perf_aggregate(args[0].perf, args[i].perf);
+  }
+  fprintf(stderr, "Aggregate on thread 0:\n");
+  perf_print(args[0].perf);
+#endif
+
+
 #endif
 
     /* clean up */

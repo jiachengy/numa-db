@@ -206,6 +206,13 @@ random_gen(relation_t *rel, const int32_t maxid)
 int 
 create_relation_pk(relation_t *relation, int32_t num_tuples) 
 {
+  /* Jiacheng: we bind it to node 0 */
+  cpu_set_t cpu_set;
+  CPU_ZERO(&cpu_set);
+  CPU_SET(0, &cpu_set);
+  pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpu_set);
+  /* ****************** */
+
     check_seed();
 
     relation->num_tuples = num_tuples;
@@ -352,6 +359,14 @@ numa_localize(tuple_t * relation, int32_t num_tuples, uint32_t nthreads)
 int 
 create_relation_fk(relation_t *relation, int32_t num_tuples, const int32_t maxid)
 {
+  /* Jiacheng: we bind it to node 0 */
+  cpu_set_t cpu_set;
+  CPU_ZERO(&cpu_set);
+  CPU_SET(0, &cpu_set);
+  pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpu_set);
+  /* ****************** */
+
+
     int32_t i, iters, remainder;
     relation_t tmp;
 

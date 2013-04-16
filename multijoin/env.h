@@ -64,6 +64,8 @@ struct thread_t {
   // local buffer
   buffer_t *buffer;
   pthread_mutex_t lock;
+  tuple_t **part; // output buffer holder for build
+  uint32_t *hist; // hist holder for build
 
   // statistics
   uint32_t local;
@@ -113,6 +115,7 @@ class Environment
   int queries_;
   bool done_;
 
+  static void*init_node(void *params);
   static void*init_thread(void *params);
   void Init();
 

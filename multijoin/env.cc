@@ -58,8 +58,6 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t capacity)
     pthread_mutex_init(&n->lock, NULL);
   }
 
-  Init();
-  
   int tid = 0;
   for (uint32_t nid = 0; nid < nnodes_; ++nid) {
     node_t *node = &nodes_[nid];
@@ -75,7 +73,7 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t capacity)
       thread->localtasks = NULL;
       thread->stolentasks = NULL;
       thread->env = this;
-      thread->memm = memm_[nid];
+      //      thread->memm = memm_[nid];
 
       thread->local = 0;
       thread->shared = 0;
@@ -91,32 +89,7 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t capacity)
     }
   }
 
-  /*
-  int node_idx[nnodes_];
-  memset(node_idx, 0, sizeof(int) * nnodes_);
-
-  for (int tid = 0; tid < nthreads; tid++) {
-    thread_t *t = &threads_[tid];
-    int cpu = cpu_of_thread_rr(tid); // round robin
-    int node = node_of_cpu(cpu);
-
-    t->tid = tid;
-    t->cpu = cpu;
-    t->node_id = node;
-    t->node = &nodes_[node];
-    t->localtasks = NULL;
-    t->stolentasks = NULL;
-    t->env = this;
-
-    t->local = 0;
-    t->shared = 0;
-    t->remote = 0;
-
-    t->recycler = recyclers_[node];
-
-    nodes_[node].groups[node_idx[node]++] = t;
-  }
-  */
+  Init();
 }
 
 Environment::~Environment()
@@ -156,15 +129,32 @@ struct InitArg
 };
 
 void*
-Environment::init_thread(void *params)
+Environment::init_node(void *params)
 {
   InitArg *args = (InitArg*)params;
   
   node_bind(args->node);
-  args->memm = new Memory(args->node, args->capacity);
+  args->memm = new Memory(args->node, args->capacity, 1024*1024*16);
   
   return NULL;
 }
+
+void*
+Environment::init_thread(void *params)
+{
+  thread_t *args = (thread_t*)params;
+  cpu_bind(args->cpu);
+
+  uint32_t partitions = 1024 * 1024 * 16 / Params::kFanoutTotal;
+  NEXT_POW_2(partitions);
+  partitions >>= 2;
+  
+  args->hist = (uint32_t*)malloc(partitions * sizeof(uint32_t));
+  args->part = (tuple_t**)malloc(partitions * sizeof(tuple_t*));
+  
+  return NULL;
+}
+
 
 void
 Environment::Init()
@@ -174,13 +164,25 @@ Environment::Init()
   for (uint32_t i = 0; i < nnodes_; i++) {
     args[i].node = i;
     args[i].capacity = capacity_;
-    pthread_create(&threads[i], NULL, &Environment::init_thread, (void*)&args[i]);
+    pthread_create(&threads[i], NULL, &Environment::init_node, (void*)&args[i]);
   }
 
   for (uint32_t i = 0; i < nnodes_; i++) {
     pthread_join(threads[i], NULL);
     memm_[i] = args[i].memm;
   }
+
+  for (uint32_t t = 0; t < nthreads_; ++t) {
+    thread_t *thread = &threads_[t];
+    thread->memm = memm_[thread->node_id];
+  }
+
+  pthread_t threads2[nnodes_];
+  for (uint32_t i = 0; i < nthreads_; i++)
+    pthread_create(&threads2[i], NULL, &Environment::init_thread, (void*)&threads_[i]);
+
+  for (uint32_t i = 0; i < nthreads_; i++)
+    pthread_join(threads2[i], NULL);
 }
 
 void
