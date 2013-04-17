@@ -40,6 +40,7 @@ int node_of_cpu(int cpu);
 int cpu_of_node(int node, int idx);
 
 void* alloc_interleaved(size_t sz);
+void* alloc_on_node(int node, size_t sz);
 void* alloc_aligned(size_t sz, uint64_t align);
 void* alloc(size_t sz);
 void dealloc(void *p, size_t sz);

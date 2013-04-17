@@ -86,12 +86,12 @@ class Environment
   // general info
   const size_t nthreads_;
   const size_t nnodes_;
-  const size_t capacity_;
+  //  const size_t capacity_;
 
   // node and thread info
   node_t *nodes_; // all nodes structure
   thread_t *threads_;
-  Memory **memm_;
+  //  Memory **memm_;
 
   // table info
   vector<Table*> tables_;	
@@ -115,13 +115,10 @@ class Environment
   int queries_;
   bool done_;
 
-  static void*init_node(void *params);
-  static void*init_thread(void *params);
-  void Init();
-
  public:
-  Environment(uint32_t nnodes, uint32_t nthreads, size_t memory_limit);
+  Environment(uint32_t nnodes, uint32_t nthreads);
   ~Environment();
+  void InitMem();
 
   node_t *nodes() { return nodes_; }
   thread_t *threads() { return threads_; }
@@ -172,8 +169,6 @@ class Environment
     return probetasks_[table_id];
   }
 
-
-  void Reset();
   void PartitionAndBuild(relation_t *relR);
   void TwoPassPartition(relation_t *relR);
   void TwoPassPartition(relation_t *relR, relation_t *relS);

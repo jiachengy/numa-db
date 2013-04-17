@@ -18,6 +18,9 @@ struct build_arg_t
 
   pthread_barrier_t *barrier_alloc;
 
+  double scalar_ratio;
+  uint32_t scalar_key;
+
   relation_t *rel;
 };
 
@@ -29,5 +32,12 @@ relation_t * build_relation_pk_onnode(size_t ntuples, uint32_t node);
 
 relation_t* parallel_build_relation_pk(size_t ntuples, uint32_t nnodes, uint32_t nthreads);
 relation_t *parallel_build_relation_fk(const size_t ntuples, const int32_t maxid, const uint32_t nnodes, const uint32_t nthreads);
+
+
+relation_t *
+build_scalar_skew(const size_t ntuples, const int32_t maxid,
+                  const uint32_t nnodes, const uint32_t nthreads,
+                  uint32_t key, double ratio);
+
 
 #endif // BUILDER_H_

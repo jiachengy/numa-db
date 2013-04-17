@@ -29,7 +29,7 @@ class Memory
   // Note: we do not maintain all the partitions allocated from this recycler
   // But it is a good practice to ensure everything is bookkept here.
   // list<Partition*> all_;
-  pthread_mutex_t mutex_;
+  //  pthread_mutex_t mutex_;
 
   void Alloc(size_t size);
   void AllocHT(size_t size);

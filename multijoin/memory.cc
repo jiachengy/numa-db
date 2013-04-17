@@ -9,7 +9,8 @@ Memory::Memory(int node, size_t capacity, size_t capacity_hist)
 {
   node_bind(node);
   
-  base_ = (tuple_t*)alloc_aligned(sizeof(tuple_t) * capacity_, Params::kPartitionSize);
+  base_ = (tuple_t*)alloc(sizeof(tuple_t) * capacity_);
+  //  base_ = (tuple_t*)alloc_aligned(sizeof(tuple_t) * capacity_, Params::kPartitionSize);
   memset(base_, 0x0, sizeof(tuple_t) * capacity_);
   size_ = 0;
 
@@ -18,14 +19,12 @@ Memory::Memory(int node, size_t capacity, size_t capacity_hist)
   size_hist_ = 0;
 
   int max_partitions = capacity / Params::kMaxTuples;
-  logging("max partitions: %d\n", max_partitions);
-
   int max_hts = Params::kFanoutTotal;
   
   Alloc(max_partitions);
   AllocHT(max_hts);
 
-  pthread_mutex_init(&mutex_, NULL);
+  //  pthread_mutex_init(&mutex_, NULL);
 }
 
 Memory::~Memory() {
@@ -42,7 +41,7 @@ Memory::~Memory() {
   dealloc(base_, sizeof(tuple_t) * capacity_);
   dealloc(base_hist_, sizeof(uint32_t) * capacity_hist_);
 
-  pthread_mutex_destroy(&mutex_);
+  //  pthread_mutex_destroy(&mutex_);
 }
 
 void
@@ -73,7 +72,7 @@ Memory::AllocHT(size_t size)
 partition_t*
 Memory::GetPartition()
 {
-  pthread_mutex_lock(&mutex_);
+  //  pthread_mutex_lock(&mutex_);
 
   if (freelist_.empty()) 
     assert(false);
@@ -81,7 +80,7 @@ Memory::GetPartition()
   partition_t *p = freelist_.front();
   freelist_.pop();
 
-  pthread_mutex_unlock(&mutex_);
+  //  pthread_mutex_unlock(&mutex_);
 
   return p;
 }
@@ -89,7 +88,7 @@ Memory::GetPartition()
 partition_t*
 Memory::GetHashtable(size_t tuples, size_t partitions)
 {
-  pthread_mutex_lock(&mutex_);
+  //  pthread_mutex_lock(&mutex_);
 
   if (freeht_.empty())
     assert(false);
@@ -107,7 +106,7 @@ Memory::GetHashtable(size_t tuples, size_t partitions)
   size_hist_ += partitions;
   assert(size_hist_ < capacity_hist_);
 
-  pthread_mutex_unlock(&mutex_);
+  //  pthread_mutex_unlock(&mutex_);
 
   assert(tuples < Params::kMaxTuples);
   htp->hashtable->tuple = dp->tuple;
@@ -123,11 +122,11 @@ Memory::GetHashtable(size_t tuples, size_t partitions)
 void
 Memory::Recycle(partition_t *p)
 {
-  pthread_mutex_lock(&mutex_);
+  //  pthread_mutex_lock(&mutex_);
   assert(p->node == node_);
   partition_reset(p);
   freelist_.push(p);
-  pthread_mutex_unlock(&mutex_);
+  //  pthread_mutex_unlock(&mutex_);
 }
 
 

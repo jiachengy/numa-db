@@ -38,7 +38,6 @@ partition_t * BuildTask::Build(thread_t * my)
   assert(htp->hashtable != NULL);
   htp->radix = radix_;
   uint32_t *sum = htp->hashtable->sum;
-  //  uint32_t *sum   = (uint32_t*) calloc(partitions + 1, sizeof(uint32_t));
 
   for(list<partition_t*>::iterator it = parts.begin();
       it != parts.end(); ++it ) {
@@ -49,11 +48,6 @@ partition_t * BuildTask::Build(thread_t * my)
       hist[hash]++;
     }
   }
-
-  // TODO: consider overflow hash tables
-  //  assert(total_tuples <= Params::kMaxTuples);
-  //  partition_t * outp = my->memm->GetPartition();
-  //  outp->tuples = total_tuples;
 
   /* prefix sum on histogram */
   for( uint32_t i = 0; i != partitions; i++ ) {
@@ -70,12 +64,6 @@ partition_t * BuildTask::Build(thread_t * my)
       *(part[hash]++) = tuple[i];
     }
   }
-
-  // hashtable_t * ht = (hashtable_t*)malloc(sizeof(hashtable_t));
-  // ht->data = outp;
-  // ht->tuples = total_tuples;
-  // ht->sum = sum;
-  // ht->partitions = partitions;
 
   /*
   // validate
@@ -118,9 +106,6 @@ void BuildTask::Run(thread_t *my)
 
 void BuildTask::Finish(thread_t* my, partition_t *htp)
 {
-  // partition_t * htp = partition_init(my->node_id);
-  // htp->hashtable = ht;
-
   htp->ready = true;
 
   // hash table partition

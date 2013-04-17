@@ -35,13 +35,12 @@ buffer_compatible(buffer_t *buffer, Table * table, int radix)
 }
 
 
-Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t capacity)
-  : nthreads_(nthreads), nnodes_(nnodes),
-    capacity_(capacity), done_(false)
+Environment::Environment(uint32_t nnodes, uint32_t nthreads)
+  : nthreads_(nthreads), nnodes_(nnodes), done_(false)
 {
   nodes_ = (node_t*)malloc(sizeof(node_t) * nnodes_);
   threads_ = (thread_t*)malloc(sizeof(thread_t) * nthreads);
-  memm_ = (Memory**)malloc(sizeof(Memory*) * nnodes_);
+  //  memm_ = (Memory**)malloc(sizeof(Memory*) * nnodes_);
   queries_ = 0;
 
   uint32_t nthreads_per_node = nthreads / nnodes_;
@@ -73,7 +72,6 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t capacity)
       thread->localtasks = NULL;
       thread->stolentasks = NULL;
       thread->env = this;
-      //      thread->memm = memm_[nid];
 
       thread->local = 0;
       thread->shared = 0;
@@ -89,7 +87,7 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads, size_t capacity)
     }
   }
 
-  Init();
+  InitMem();
 }
 
 Environment::~Environment()
@@ -99,7 +97,7 @@ Environment::~Environment()
     free(nodes_[node].groups);
     pthread_mutex_destroy(&nodes_[node].lock);
 
-    delete memm_[node];
+    //    delete memm_[node];
   }
 
   for (uint32_t tid = 0; tid != nthreads_; tid++)
@@ -107,7 +105,7 @@ Environment::~Environment()
 
   free(threads_);
   free(nodes_);
-  free(memm_);
+  //  free(memm_);
   
   // deallocate tables
   int i = 0;
@@ -121,92 +119,33 @@ Environment::~Environment()
     delete *it;
 }
 
-struct InitArg
-{
-  int node;
-  size_t capacity;
-  Memory *memm;
-};
-
 void*
-Environment::init_node(void *params)
+init_thread_mem(void *params)
 {
-  InitArg *args = (InitArg*)params;
-  
-  node_bind(args->node);
-  args->memm = new Memory(args->node, args->capacity, 1024*1024*16);
-  
-  return NULL;
-}
-
-void*
-Environment::init_thread(void *params)
-{
-  thread_t *args = (thread_t*)params;
-  cpu_bind(args->cpu);
-
   uint32_t partitions = 1024 * 1024 * 16 / Params::kFanoutTotal;
   NEXT_POW_2(partitions);
   partitions >>= 2;
-  
+   //  partitions >>= 1; // make it larger than needed
+
+  thread_t *args = (thread_t*)params;
+  cpu_bind(args->cpu);
   args->hist = (uint32_t*)malloc(partitions * sizeof(uint32_t));
   args->part = (tuple_t**)malloc(partitions * sizeof(tuple_t*));
-  
+  args->memm = new Memory(args->node_id, gConfig.mem_per_thread, 1024*1024*16);
+
   return NULL;
 }
 
 
 void
-Environment::Init()
+Environment::InitMem()
 {
-  pthread_t threads[nnodes_];
-  InitArg args[nnodes_];
-  for (uint32_t i = 0; i < nnodes_; i++) {
-    args[i].node = i;
-    args[i].capacity = capacity_;
-    pthread_create(&threads[i], NULL, &Environment::init_node, (void*)&args[i]);
-  }
+  pthread_t threads[nthreads_];
+  for (uint32_t t = 0; t != nthreads_; t++)
+    pthread_create(&threads[t], NULL, init_thread_mem, (void*)&threads_[t]);
 
-  for (uint32_t i = 0; i < nnodes_; i++) {
-    pthread_join(threads[i], NULL);
-    memm_[i] = args[i].memm;
-  }
-
-  for (uint32_t t = 0; t < nthreads_; ++t) {
-    thread_t *thread = &threads_[t];
-    thread->memm = memm_[thread->node_id];
-  }
-
-  pthread_t threads2[nnodes_];
-  for (uint32_t i = 0; i < nthreads_; i++)
-    pthread_create(&threads2[i], NULL, &Environment::init_thread, (void*)&threads_[i]);
-
-  for (uint32_t i = 0; i < nthreads_; i++)
-    pthread_join(threads2[i], NULL);
-}
-
-void
-Environment::Reset()
-{
-  Table::ResetId();
-  
-  tables_.clear();
-  tasks_.clear();
-
-  for (uint32_t node = 0; node < nnodes_; node++) {
-    nodes_[node].queue = new Taskqueue();
-  }
-
-  for (uint32_t t = 0; t < nthreads_; t++) {
-    threads_[t].batch_task = NULL;
-    threads_[t].localtasks = NULL;
-    threads_[t].stolentasks = NULL;
-    threads_[t].local = 0;
-    threads_[t].shared = 0;
-    threads_[t].remote = 0;
-  }
-
-  done_ = false;
+  for (uint32_t t = 0; t != nthreads_; t++)
+    pthread_join(threads[t], NULL);
 }
 
 
@@ -462,29 +401,43 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
 
   Table *rt = Table::BuildTableFromRelation(relR);
   rt->set_type(OpPartition);
+
+#ifdef TWO_PASSES
   Table *rpass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
   Table *rpass2tb = new Table(OpBuild, nnodes_, Params::kFanoutTotal);
+#else
+  Table *rpass1tb = new Table(OpBuild, nnodes_, Params::kFanoutPass1);
+#endif
   Table *rbuild = new Table(OpProbe, nnodes_, Params::kFanoutTotal);
 
   Table *st = Table::BuildTableFromRelation(relS);
   st->set_type(OpPartition);
+
+#ifdef TWO_PASSES
   Table *spass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
   Table *spass2tb = new Table(OpProbe, nnodes_, Params::kFanoutTotal);
-
+#else
+  Table *spass1tb = new Table(OpProbe, nnodes_, Params::kFanoutPass1);
+#endif
   Table *result = new Table(OpNone, nnodes_, Params::kFanoutTotal);
 
 
   // Table Catelog
   AddTable(rt);
   AddTable(rpass1tb);
+#ifdef TWO_PASSES
   AddTable(rpass2tb);
+#endif
   AddTable(rbuild);
   AddTable(st);
   AddTable(spass1tb);
+#ifdef TWO_PASSES
   AddTable(spass2tb);
+#endif
   AddTable(result);
   build_ = rbuild;
-  
+
+#ifdef TWO_PASSES  
   // Global accessible p2tasks
   P2Task ***p2tasksR = (P2Task***)malloc(sizeof(P2Task**) * nnodes_);
   P2Task ***p2tasksS = (P2Task***)malloc(sizeof(P2Task**) * nnodes_);
@@ -500,19 +453,27 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
     p2tasksR[node] = p2_tasks_on_nodeR;
     p2tasksS[node] = p2_tasks_on_nodeS;
   }
+#endif
+  Table *build_table, *probe_table;
+#ifdef TWO_PASSES  
+  build_table = rpass2tb;
+  probe_table = spass2tb;
+#else
+  build_table = rpass1tb;
+  probe_table = spass1tb;
+#endif  
 
   // build tasks
-  Tasklist *buildR = new Tasklist(rpass2tb, rbuild, ShareGlobal);
+  Tasklist *buildR = new Tasklist(build_table, rbuild, ShareGlobal);
   for (int i = 0; i != Params::kFanoutTotal; ++i)
-    buildR->AddTask(new BuildTask(spass2tb, i));
-
+    buildR->AddTask(new BuildTask(probe_table, i));
 
   // probe tasks
   ProbeTask **probetasks = (ProbeTask**)malloc(sizeof(ProbeTask*) * Params::kFanoutTotal);
   for (int radix = 0; radix != Params::kFanoutTotal; ++radix) {
-    probetasks[radix] = new ProbeTask(spass2tb, result, radix);
+    probetasks[radix] = new ProbeTask(probe_table, result, radix);
   }
-  AddProbeTasks(probetasks, spass2tb->id());
+  AddProbeTasks(probetasks, probe_table->id());
 
 
   for (uint32_t node = 0; node < nnodes_; node++) {
@@ -524,6 +485,7 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
     Tasklist *spass1tasks = new Tasklist(st, spass1tb, ShareNode);
     tasks_.push_back(spass1tasks);
 
+#ifdef TWO_PASSES
     Tasklist *rpass2tasks = new Tasklist(rpass1tb, rpass2tb, ShareNode);    
     for (int key = 0; key < Params::kFanoutPass1; ++key)
       rpass2tasks->AddTask(p2tasksR[node][key]);
@@ -533,13 +495,18 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
     for (int key = 0; key < Params::kFanoutPass1; ++key)
       spass2tasks->AddTask(p2tasksS[node][key]);
     tasks_.push_back(spass2tasks);
+#endif
 
-    Tasklist *probetasks = new Tasklist(spass2tb, result, ShareNode);
+    Tasklist *probetasks = new Tasklist(probe_table, result, ShareNode);
 
     tq->AddList(rpass1tasks);
+#ifdef TWO_PASSES
     tq->AddList(rpass2tasks);
+#endif
     tq->AddList(spass1tasks);
+#ifdef TWO_PASSES
     tq->AddList(spass2tasks);
+#endif
     tq->AddList(buildR);
     tq->AddList(probetasks);
     tq->Unblock(rpass1tasks->id());
@@ -562,6 +529,4 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
       spass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
     }
   }
-
 }
-

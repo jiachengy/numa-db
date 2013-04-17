@@ -10,6 +10,8 @@
 
 #include "perf.h"
 
+#define PRINT_PER_THREAD
+
 using namespace std;
 
 inline void run_task(Task *task, thread_t *my)
@@ -87,13 +89,7 @@ Task * steal_remote(thread_t *my)
 
 void* work_thread(void *param)
 {
-  int putbacks = 0;
-
   thread_t *my = (thread_t*)param;
-  int cpu = my->cpu;
-  cpu_bind(cpu);
-
-  logging("Thread %d starting...\n", my->tid);
 
 #if PER_CORE==1
   perf_register_thread();
@@ -102,6 +98,11 @@ void* work_thread(void *param)
   perf_counter_t before = perf_read(my->perf);
 
 #endif
+
+  int putbacks = 0;
+  int cpu = my->cpu;
+  cpu_bind(cpu);
+
 
   Taskqueue *queue = my->node->queue;
 
@@ -148,7 +149,8 @@ void* work_thread(void *param)
     }
 
     assert(task == NULL);
-    
+
+       
     // poll buffered stolen task
     if (my->stolentasks) {
       task = my->stolentasks->FetchAtomic();
@@ -183,13 +185,13 @@ void* work_thread(void *param)
   }
 
   logging("Putbacks: %d\n", putbacks);
-  logging("Remaining partition: %d\n", my->memm->available());
+  //  logging("Remaining partition: %d\n", my->memm->available());
 
 #if PER_CORE == 1
+  perf_stop(my->perf);
   perf_counter_t after = perf_read(my->perf);
   my->total_counter = perf_counter_diff(before, after);
 
-  perf_stop(my->perf);
   perf_destroy(my->perf);
   perf_unregister_thread();
 #endif
@@ -204,23 +206,21 @@ void Run(Environment *env)
   perf_start(perf);
   perf_counter_t before = perf_read(perf);
 #endif
+  pthread_t threads[env->nthreads()];
 
   long t = PAPI_get_real_usec();
 
-  pthread_t threads[env->nthreads()];
   // start threads
-  for (int i = 0; i < env->nthreads(); i++) {
+  for (int i = 0; i < env->nthreads(); i++)
     pthread_create(&threads[i], NULL, work_thread, (void*)&env->threads()[i]);
-  }
 
   // join threads
   for (int i = 0; i < env->nthreads(); i++)
     pthread_join(threads[i], NULL);
 
   t = PAPI_get_real_usec() - t;
-  logging("Running time: %ld usec\n", t);
-  logging("All threads join.\n");
 
+  logging("All threads join.\n");
 
 #if PER_SYSTEM == 1
   perf_counter_t after = perf_read(perf);
@@ -237,10 +237,13 @@ void Run(Environment *env)
     perf_counter_aggr(&build_aggr, args[i].stage_counter[1]);
     perf_counter_aggr(&probe_aggr, args[i].stage_counter[2]);
     perf_counter_aggr(&total_aggr, args[i].total_counter);
+#ifdef PRINT_PER_THREAD
     logging("Thread[%d] partition: %ld usec\n", i, args[i].stage_counter[0].tick);
     logging("Thread[%d] build: %ld usec\n", i, args[i].stage_counter[1].tick);
     logging("Thread[%d] probe: %ld usec\n", i, args[i].stage_counter[2].tick);
     logging("Thread[%d] time: %ld  usec\n", i, args[i].total_counter.tick);
+#endif
+
   }
   logging("Aggregate partition counter:\n");
   perf_print(partition_aggr);
@@ -250,8 +253,15 @@ void Run(Environment *env)
   perf_print(probe_aggr);
   logging("Aggregate total counter:\n");
   perf_print(total_aggr);
+
+  logging("average partition: %.2f usec\n", 1.0 * partition_aggr.tick / env->nthreads());
+  logging("average build: %.2f usec\n", 1.0 * build_aggr.tick / env->nthreads());
+  logging("average probe: %.2f usec\n", 1.0 * probe_aggr.tick / env->nthreads());
+  logging("average total: %.2f usec\n", 1.0 * total_aggr.tick / env->nthreads());
+
 #endif
 
+#ifdef PRINT_PER_THREAD
   thread_t *infos = env->threads();
   for (int i = 0; i < env->nthreads(); i++) {
     cout << "Thread[" << infos[i].cpu << "]:"
@@ -259,28 +269,30 @@ void Run(Environment *env)
          << infos[i].shared << ","
          << infos[i].remote << endl;
   }
+#endif
 
-  
-  Table *tr = env->GetTable(0);
-  Table *trpass1 = env->GetTable(1);
-  Table *trpass2 = env->GetTable(2);
+  logging("Running time: %ld usec\n", t);
+
+  //  Table *tr = env->GetTable(0);
+  //  Table *trpass1 = env->GetTable(1);
+  //  Table *trpass2 = env->GetTable(2);
   // Table *ts = env->GetTable(3);
   // Table *tspass1 = env->GetTable(4);
   // Table *tspass2 = env->GetTable(5);
 
-  int shift1 = Params::kOffsetPass1;
-  int mask1 = (((1 << Params::kNumBitsPass1) - 1) << shift1);
-  int shift2 = Params::kNumRadixBits;
-  int mask2 = (1 << Params::kNumRadixBits) - 1;
+  // int shift1 = Params::kOffsetPass1;
+  // int mask1 = (((1 << Params::kNumBitsPass1) - 1) << shift1);
+  // int shift2 = Params::kNumRadixBits;
+  // int mask2 = (1 << Params::kNumRadixBits) - 1;
   
-  long long sum0 = tr->Validate(0, 0);
-  long long sum1 = trpass1->Validate(mask1, shift1);
-  long long sum2 = trpass2->Validate(mask2, shift2);
+  // long long sum0 = tr->Validate(0, 0);
+  // long long sum1 = trpass1->Validate(mask1, shift1);
+  // long long sum2 = trpass2->Validate(mask2, shift2);
 
-  logging("sum: %lld, sum1: %lld, sum2: %lld\n", sum0, sum1, sum2);
+  // logging("sum: %lld, sum1: %lld, sum2: %lld\n", sum0, sum1, sum2);
 
-  Table *output = env->output_table();
-  logging("matches: %ld\n", output->tuples());
+  // Table *output = env->output_table();
+  // logging("matches: %ld\n", output->tuples());
 
 #if PER_SYSTEM == 1
   perf_stop(perf);

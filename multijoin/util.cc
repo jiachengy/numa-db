@@ -24,6 +24,19 @@ int cores[4][16] = {
 };
 #endif
 
+int log_2(uint64_t x)
+{
+	int p = 0;
+	while ((((uint64_t) 1) << p) < x) p++;
+	return p;
+}
+
+int power_of_2(uint64_t x)
+{
+	return x && (x & (x - 1)) == 0;
+}
+
+
 int cpu_of_thread_rr(int tid)
 {
   int node = tid % num_numa_nodes();
@@ -130,18 +143,20 @@ void* alloc_aligned(size_t sz, uint64_t align)
   return ptr;
 }
 
-
 void* alloc(size_t sz)
 {
- // return numa_alloc_local(sz);
- 
-  void* ptr;
+  void *ptr;
+#ifdef NUMA_INTERLEAVED
+  //  ptr = alloc_on_node(2, sz);
+  ptr = alloc_interleaved(sz);
+  return ptr;
+#else
   int retval;
   retval = posix_memalign((void**)&ptr, CACHE_LINE_SIZE, sz);
-
   assert(retval == 0);
-
   return ptr;
+#endif
+
 }
 
 // be careful when used in global thread
@@ -150,16 +165,30 @@ void* alloc_interleaved(size_t sz)
   bitmask *prev = numa_get_membind(); // save prev mask
   numa_set_membind(numa_all_nodes_ptr); // rebind to all nodes
   void *data = numa_alloc_interleaved(sz);
+  memset(data, 0xFF, sz);
   // restore prev mask
   numa_set_membind(prev);
   return data;
 }
 
+void* alloc_on_node(int node, size_t sz)
+{
+  bitmask *prev = numa_get_membind(); // save prev mask
+  node_bind(node);
+  void *data = numa_alloc_local(sz);
+  numa_set_membind(prev);
+  return data;
+}
+
+
 
 void dealloc(void *p, size_t sz)
 {
-  free(p);
-   // numa_free(p, sz);
+#ifdef NUMA_INTERLEAVED
+   numa_free(p, sz);
+#else
+   free(p);
+#endif
 }
 
 uint64_t micro_time(void)
@@ -211,15 +240,3 @@ uint32_t rand_next(rand_state_t *state)
   return y;
 }
 
-
-int log_2(uint64_t x)
-{
-	int p = 0;
-	while ((((uint64_t) 1) << p) < x) p++;
-	return p;
-}
-
-int power_of_2(uint64_t x)
-{
-	return x && (x & (x - 1)) == 0;
-}

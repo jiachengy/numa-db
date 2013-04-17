@@ -8,6 +8,8 @@
 
 #include "perf.h" // papi
 
+config_t gConfig;
+
 int main(int argc, char *argv[])
 {
   srand(time(NULL));
@@ -24,24 +26,28 @@ int main(int argc, char *argv[])
   if (argc > 2)
     nodes = atoi(argv[2]);
   
-  size_t rsize = 1024 * 1024 * 16; // 128M
-  size_t ssize = 1024 * 1024 * 16; // 16M
+  size_t rsize = 1024 * 1024 * 1024; // 128M
+  //  size_t ssize = 1024 * 1024 * 16; // 16M
 
-  relation_t * relR = parallel_build_relation_pk(rsize, nodes, nthreads);
+  //  relation_t * relR = parallel_build_relation_fk(rsize, rsize, nodes, nthreads);
+  relation_t * relR = build_scalar_skew(rsize, rsize, nodes, nthreads,
+                                        1, 0.5);
+
   logging("Building R table with %ld tuples done.\n", rsize);
-  relation_t *relS = parallel_build_relation_fk(ssize, rsize, nodes, nthreads);
-  logging("Building S table with %ld tuples done.\n", ssize);
+  //  relation_t *relS = parallel_build_relation_fk(ssize, rsize, nodes, nthreads);
+  //  logging("Building S table with %ld tuples done.\n", ssize);
 
-  size_t capacity = rsize * 128;
-  Environment *env = new Environment(nodes, nthreads, capacity);
+  gConfig.mem_per_thread = rsize / nthreads * 8;
+
+  Environment *env = new Environment(nodes, nthreads);
 
   logging("Environment initialized.\n");
 
   //   env->PartitionAndBuild(relR);
-  //    env->RadixPartition(relR);
-  //     env->TwoPassPartition(relR);
+  //  env->RadixPartition(relR);
+  env->TwoPassPartition(relR);
   //env->TwoPassPartition(relR, relS);
-  env->Hashjoin(relR, relS);
+  //  env->Hashjoin(relR, relS);
 
   logging("Query initialized.\n");
 

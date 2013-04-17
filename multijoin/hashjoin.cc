@@ -65,7 +65,7 @@ PartitionTask::DoPartition(thread_t *my)
   tuple_t *tuple_ptr = inp->tuple;
 
   // one cache line per partition
-  cache_line_t *wc_buf = (cache_line_t*)alloc(fanout * sizeof(cache_line_t));
+  cache_line_t *wc_buf = (cache_line_t*)alloc_aligned(fanout * sizeof(cache_line_t), CACHE_LINE_SIZE);
   uint32_t *wc_count = (uint32_t*)calloc(fanout, sizeof(uint32_t));
   tuple_t **part = (tuple_t**)malloc(fanout * sizeof(tuple_t*));
 

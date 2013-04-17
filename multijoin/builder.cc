@@ -122,7 +122,6 @@ build_fk_thread(void *params)
   random_gen(tuples, arg->ntuples, arg->maxid);
 
   /*
-  
   int iters = arg->ntuples / arg->maxid;
 
   for (int iter = 0; iter < iters; ++iter) {
@@ -346,3 +345,108 @@ build_relation_pk_onnode(size_t ntuples, uint32_t node)
   return rel;
 }
 
+
+void*
+build_scalar_thread(void *params)
+{
+  build_arg_t *arg = (build_arg_t*)params;
+  int cpu = arg->cpu;
+  int node = arg->node;
+  relation_t *rel = arg->rel;
+
+  cpu_bind(cpu);
+  cpu_membind(cpu);
+
+  if (cpu == cpu_of_node(node, 0)) {
+    size_t ntuples_on_node = arg->rel->ntuples_on_node[node];
+    tuple_t *tuples = (tuple_t*)alloc(sizeof(tuple_t) * ntuples_on_node);
+    memset(tuples, 0x0, sizeof(tuple_t) * ntuples_on_node);
+    rel->tuples[node] = tuples;
+  }
+
+  pthread_barrier_wait(arg->barrier_alloc);
+
+  tuple_t *tuples = rel->tuples[node] + arg->offset;
+  assert(tuples != NULL);
+
+  random_gen(tuples, arg->ntuples, arg->maxid);
+
+  size_t skewed_tuples = arg->ntuples * arg->scalar_ratio;
+  uint32_t scalar_key = arg->scalar_key;
+  
+  logging("%ld is set to %d\n", skewed_tuples, scalar_key);
+
+  rand_state *state = rand_init(time(NULL));
+  for (uint32_t i = 0; i != skewed_tuples; ++i) {
+    int32_t j = RAND_RANGE(arg->ntuples, state);
+    tuples[j].key = scalar_key;
+  }
+
+  free(state);
+  return NULL;
+}
+
+
+relation_t *
+build_scalar_skew(const size_t ntuples, const int32_t maxid,
+                  const uint32_t nnodes, const uint32_t nthreads,
+                  uint32_t key, double ratio)
+{
+  assert(nnodes <= num_numa_nodes());
+
+  relation_t *rel = relation_init(nnodes);
+
+  assert(nthreads >= nnodes);
+
+  rel->ntuples = ntuples;
+  rel->nnodes = nnodes;
+
+  build_arg_t args[nthreads];
+  pthread_t threads[nthreads];
+  pthread_barrier_t barriers[nnodes];
+
+  size_t ntuples_per_node = ntuples / nnodes;
+  size_t ntuples_on_lastnode = ntuples - ntuples_per_node * (nnodes - 1);
+  size_t nthreads_per_node = nthreads / nnodes;
+  size_t nthreads_on_lastnode = nthreads - nthreads_per_node * (nnodes - 1);
+
+  int tid = 0;
+  for (uint32_t node = 0; node < nnodes; ++node) {
+    rel->ntuples_on_node[node] = (node == nnodes-1) ? ntuples_on_lastnode : ntuples_per_node;
+    size_t nthreads_on_node = (node == nnodes - 1) ? nthreads_on_lastnode : nthreads_per_node;
+    size_t ntuples_per_thread = rel->ntuples_on_node[node] / nthreads_on_node;
+    size_t ntuples_lastthread = rel->ntuples_on_node[node] - ntuples_per_thread * (nthreads_on_node - 1);
+
+    pthread_barrier_init(&barriers[node], NULL, nthreads_on_node);
+
+    int offset = 0;
+    for (uint32_t t = 0; t < nthreads_on_node; t++, tid++) {
+      args[tid].tid = tid;
+      args[tid].cpu = cpu_of_node(node, t);
+      args[tid].node = node;
+      args[tid].offset = offset;
+      args[tid].maxid = maxid;
+      args[tid].ntuples = (t == nthreads_on_node - 1) ? ntuples_lastthread : ntuples_per_thread;
+      
+      offset += (args[tid].ntuples);
+
+      args[tid].barrier_alloc = &barriers[node];
+      args[tid].rel = rel;
+
+      args[tid].scalar_key = key;
+      args[tid].scalar_ratio = ratio;
+    }
+  }
+
+  for (uint32_t i = 0; i < nthreads; i++)
+    pthread_create(&threads[i], NULL, build_scalar_thread, (void*)&args[i]);
+
+  for (uint32_t i = 0; i < nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
+
+  for (uint32_t node = 0; node < nnodes; ++node)
+    pthread_barrier_destroy(&barriers[node]);
+
+  return rel;
+}

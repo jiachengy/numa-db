@@ -1,5 +1,6 @@
 CC=g++
 DEFINES=-DDEBUG -DUSE_PERF
+#DEFINES+=-DNUMA_INTERLEAVED
 CFLAGS=-pthread -Wall -msse4 -O3
 LIBS=-lpthread -lnuma -lpapi
 
