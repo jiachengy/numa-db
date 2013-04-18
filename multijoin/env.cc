@@ -129,9 +129,13 @@ init_thread_mem(void *params)
 
   thread_t *args = (thread_t*)params;
   cpu_bind(args->cpu);
+  args->wc_buf = (cache_line_t*)alloc_aligned(Params::kFanoutPass1 * sizeof(cache_line_t), CACHE_LINE_SIZE);
+  args->wc_count = (uint32_t*)malloc(Params::kFanoutPass1 * sizeof(uint32_t));
+  args->wc_part = (tuple_t**)malloc(Params::kFanoutPass1 * sizeof(tuple_t*));
+
   args->hist = (uint32_t*)malloc(partitions * sizeof(uint32_t));
   args->part = (tuple_t**)malloc(partitions * sizeof(tuple_t*));
-  args->memm = new Memory(args->node_id, gConfig.mem_per_thread, 1024*1024*16);
+  args->memm = new Memory(args->node_id, gConfig.mem_per_thread, 1024*1024*128);
 
   return NULL;
 }
@@ -405,6 +409,7 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
 #ifdef TWO_PASSES
   Table *rpass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
   Table *rpass2tb = new Table(OpBuild, nnodes_, Params::kFanoutTotal);
+  logging("two passes\n");
 #else
   Table *rpass1tb = new Table(OpBuild, nnodes_, Params::kFanoutPass1);
 #endif
@@ -510,9 +515,9 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
     tq->AddList(buildR);
     tq->AddList(probetasks);
     tq->Unblock(rpass1tasks->id());
-    //    tq->Unblock(rpass2tasks->id());
+    tq->Unblock(rpass2tasks->id());
     tq->Unblock(spass1tasks->id());
-    //    tq->Unblock(rpass2tasks->id());
+    tq->Unblock(rpass2tasks->id());
 
     // create partition task from table R
     list<partition_t*>& pr = rt->GetPartitionsByNode(node);

@@ -30,9 +30,7 @@ void partition_reset(partition_t * partition)
   p->radix = -1;
   p->done = false;
   p->ready = false;
-  p->tuple = NULL;
   p->tuples = 0;
-  p->offset = -1;
   p->hashtable = NULL;
 }
 

@@ -9,6 +9,8 @@
 
 #define STAGES 4
 
+#define TWO_PASSES
+
 struct config_t
 {
   size_t mem_per_thread;
@@ -20,11 +22,10 @@ class Params
 {
  public:
   //  static size_t kMaxHtTuples;
-  static const size_t kPartitionSize = 1024 * 1024; // 128K tuples = 1M
+  static const size_t kPartitionSize = 1024 * 256; // 128K tuples = 1M
   static const size_t kMaxTuples = kPartitionSize / sizeof(tuple_t);
-
   static const int kTuplesPerCacheLine = CACHE_LINE_SIZE / sizeof(tuple_t);
-
+  static const size_t kPaddingTuples = 0;
   //  static const int kHtInflateRate = 1; // can only be 2^k
 
   static const int kNumRadixBits = 12;

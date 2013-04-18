@@ -35,8 +35,9 @@ Task* Taskqueue::Fetch()
     }
 
     // if empty and is ready to retire
-    if ((*it)->exhausted())
+    if ((*it)->exhausted()) {
       it = actives_.erase(it);
+    }
     else
       ++it;
   }

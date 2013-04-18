@@ -150,42 +150,39 @@ void* work_thread(void *param)
 
     assert(task == NULL);
 
-       
     // poll buffered stolen task
-    if (my->stolentasks) {
-      task = my->stolentasks->FetchAtomic();
+    // if (my->stolentasks) {
+    //   task = my->stolentasks->FetchAtomic();
       
-      // case 1: we steal a job
-      if (task) {
-        my->remote++;
-        run_task(task, my);
-        continue;
-      }
-      // case 2: the job we trying to steal is empty or has already exhausted
-      else {
-        my->stolentasks = NULL;
-      }
-    }
+    //   // case 1: we steal a job
+    //   if (task) {
+    //     my->remote++;
+    //     run_task(task, my);
+    //     continue;
+    //   }
+    //   // case 2: the job we trying to steal is empty or has already exhausted
+    //   else {
+    //     my->stolentasks = NULL;
+    //   }
+    // }
 
-    assert(my->stolentasks == NULL);
+    // assert(my->stolentasks == NULL);
 
-    if (!my->stolentasks)
-      steal_local(my);
+    // if (!my->stolentasks)
+    //   steal_local(my);
 
-    if (!my->stolentasks) {
-      task = steal_remote(my);
-      if (task) {
-        my->remote++;
-        run_task(task, my);
-      }
-      else if (my->stolentasks) {
-        //        logging("We are sharing a list from remote\n");
-      }
-    }
+    
+    // if (!my->stolentasks) {
+    //   task = steal_remote(my);
+    //   if (task) {
+    //     my->remote++;
+    //     run_task(task, my);
+    //   }
+    // }
   }
 
   logging("Putbacks: %d\n", putbacks);
-  //  logging("Remaining partition: %d\n", my->memm->available());
+  logging("Remaining partition: %d\n", my->memm->available());
 
 #if PER_CORE == 1
   perf_stop(my->perf);
@@ -291,8 +288,8 @@ void Run(Environment *env)
 
   // logging("sum: %lld, sum1: %lld, sum2: %lld\n", sum0, sum1, sum2);
 
-  // Table *output = env->output_table();
-  // logging("matches: %ld\n", output->tuples());
+  Table *output = env->output_table();
+  logging("matches: %ld\n", output->tuples());
 
 #if PER_SYSTEM == 1
   perf_stop(perf);

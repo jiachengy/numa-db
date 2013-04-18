@@ -65,6 +65,8 @@ partition_t * BuildTask::Build(thread_t * my)
     }
   }
 
+
+
   /*
   // validate
   long long sum = 0;

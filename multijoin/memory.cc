@@ -10,15 +10,16 @@ Memory::Memory(int node, size_t capacity, size_t capacity_hist)
   node_bind(node);
   
   base_ = (tuple_t*)alloc(sizeof(tuple_t) * capacity_);
-  //  base_ = (tuple_t*)alloc_aligned(sizeof(tuple_t) * capacity_, Params::kPartitionSize);
+
   memset(base_, 0x0, sizeof(tuple_t) * capacity_);
+
   size_ = 0;
 
   base_hist_ = (uint32_t*)alloc(sizeof(uint32_t) * capacity_hist_);
   memset(base_hist_, 0x0, sizeof(uint32_t) * capacity_hist_);
   size_hist_ = 0;
 
-  int max_partitions = capacity / Params::kMaxTuples;
+  int max_partitions = capacity / (Params::kMaxTuples + Params::kPaddingTuples);
   int max_hts = Params::kFanoutTotal;
   
   Alloc(max_partitions);
@@ -51,7 +52,7 @@ Memory::Alloc(size_t size)
     partition_t *p = partition_init(node_);
     p->tuple = &base_[size_];
     p->offset = size_;
-    size_ += Params::kMaxTuples;
+    size_ += (Params::kMaxTuples + Params::kPaddingTuples);
     assert(size_ <= capacity_);
     freelist_.push(p);
   }
@@ -90,14 +91,16 @@ Memory::GetHashtable(size_t tuples, size_t partitions)
 {
   //  pthread_mutex_lock(&mutex_);
 
-  if (freeht_.empty())
-    assert(false);
+  size_t parts = tuples / Params::kMaxTuples;
+  if (parts * Params::kMaxTuples < tuples)
+    ++parts;
 
-  if (freelist_.empty())
-    assert(false);
+  assert(!freeht_.empty());
+  assert(freelist_.size() > parts);
 
   partition_t *dp = freelist_.front();
-  freelist_.pop();
+  for (uint32_t i = 0; i != parts; ++i)
+    freelist_.pop();
 
   partition_t *htp = freeht_.front();
   freeht_.pop();
@@ -108,7 +111,7 @@ Memory::GetHashtable(size_t tuples, size_t partitions)
 
   //  pthread_mutex_unlock(&mutex_);
 
-  assert(tuples < Params::kMaxTuples);
+  //  assert(tuples < Params::kMaxTuples);
   htp->hashtable->tuple = dp->tuple;
   htp->hashtable->tuples = tuples;
   htp->hashtable->sum = sum;
@@ -123,7 +126,7 @@ void
 Memory::Recycle(partition_t *p)
 {
   //  pthread_mutex_lock(&mutex_);
-  assert(p->node == node_);
+  //  assert(p->node == node_);
   partition_reset(p);
   freelist_.push(p);
   //  pthread_mutex_unlock(&mutex_);

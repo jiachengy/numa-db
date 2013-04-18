@@ -64,8 +64,12 @@ struct thread_t {
   // local buffer
   buffer_t *buffer;
   pthread_mutex_t lock;
+
   tuple_t **part; // output buffer holder for build
   uint32_t *hist; // hist holder for build
+  cache_line_t *wc_buf;
+  uint32_t *wc_count;
+  tuple_t **wc_part;
 
   // statistics
   uint32_t local;

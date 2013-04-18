@@ -165,7 +165,6 @@ void* alloc_interleaved(size_t sz)
   bitmask *prev = numa_get_membind(); // save prev mask
   numa_set_membind(numa_all_nodes_ptr); // rebind to all nodes
   void *data = numa_alloc_interleaved(sz);
-  memset(data, 0xFF, sz);
   // restore prev mask
   numa_set_membind(prev);
   return data;

@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,9 +12,6 @@
 #include <sched.h>
 #include <math.h>
 #include <numa.h>
-
-#undef _GNU_SOURCE_
-
 
 static uint64_t micro_time(void)
 {
@@ -67,7 +62,7 @@ static void *mamalloc(size_t size)
 static void schedule_threads(int *cpu, int *numa_node, int threads, int numa)
 {
 	int t, max_threads = cpus();
-	int *thread_numa = malloc(max_threads * sizeof(int));
+	int *thread_numa = (int*)malloc(max_threads * sizeof(int));
 	for (t = 0 ; t != max_threads ; ++t)
 		thread_numa[t] = numa_node_of_cpu(t);
 	for (t = 0 ; t != threads ; ++t) {
@@ -139,7 +134,7 @@ static void *zipf_thread(void *arg)
 	uint64_t total_size = d->total_size;
 	// allocate space for data
 	if (!numa_local_id && d->data[numa_node] == NULL)
-		d->data[numa_node] = mamalloc(numa_size * sizeof(uint64_t));
+      d->data[numa_node] = (uint64_t*)mamalloc(numa_size * sizeof(uint64_t));
 	// offsets of probability array
 	uint64_t size = d->total_size / threads;
 	uint64_t offset = size * id;
@@ -203,7 +198,7 @@ static void *zipf_thread(void *arg)
 	} while (data != data_end);
 	// update bits
 	if (d->bits_on) {
-		uint64_t *bits = calloc(65, sizeof(uint64_t));
+      uint64_t *bits = (uint64_t*)calloc(65, sizeof(uint64_t));
 		uint64_t m1 = -1;
 		data -= size;
 		if (size) do {
@@ -260,13 +255,13 @@ uint64_t zipf(uint64_t **data, uint64_t *size, int numa,
 	global.total_size = 0;
 	for (n = 0 ; n != numa ; ++n)
 		global.total_size += size[n];
-	global.prob = numa_alloc_interleaved(global.total_size * sizeof(double));
-	global.factor = malloc(threads * sizeof(double));
-	global.cpu = malloc(threads * sizeof(int));
-	global.numa_node = malloc(threads * sizeof(int));
+	global.prob = (double*)numa_alloc_interleaved(global.total_size * sizeof(double));
+	global.factor = (double*)malloc(threads * sizeof(double));
+	global.cpu = (int*)malloc(threads * sizeof(int));
+	global.numa_node = (int*)malloc(threads * sizeof(int));
 	schedule_threads(global.cpu, global.numa_node, threads, numa);
-	numa_zipf_thread_data_t *thread_data = malloc(threads * sizeof(numa_zipf_thread_data_t));
-	pthread_t *id = malloc(threads * sizeof(pthread_t));
+	numa_zipf_thread_data_t *thread_data = (numa_zipf_thread_data_t*)malloc(threads * sizeof(numa_zipf_thread_data_t));
+	pthread_t *id = (pthread_t*)malloc(threads * sizeof(pthread_t));
 	srand(micro_time());
 	for (t = 0 ; t != threads ; ++t) {
 		thread_data[t].id = t;

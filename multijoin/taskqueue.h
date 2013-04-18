@@ -77,7 +77,7 @@ class Tasklist
   Task* Fetch();
   Task* FetchAtomic();
 
-  bool exhausted() { return tasks_.empty() && in_->ready(); }
+  bool exhausted() { return tasks_.empty() && in_->done(); }
   bool empty() { return tasks_.empty(); }
 
   size_t size() { return tasks_.size(); }

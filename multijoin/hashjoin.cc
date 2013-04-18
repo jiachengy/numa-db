@@ -65,9 +65,10 @@ PartitionTask::DoPartition(thread_t *my)
   tuple_t *tuple_ptr = inp->tuple;
 
   // one cache line per partition
-  cache_line_t *wc_buf = (cache_line_t*)alloc_aligned(fanout * sizeof(cache_line_t), CACHE_LINE_SIZE);
-  uint32_t *wc_count = (uint32_t*)calloc(fanout, sizeof(uint32_t));
-  tuple_t **part = (tuple_t**)malloc(fanout * sizeof(tuple_t*));
+  cache_line_t *wc_buf = my->wc_buf;
+  uint32_t *wc_count = my->wc_count;
+  memset(wc_count, 0x0, fanout * sizeof(uint32_t));
+  tuple_t **part = my->wc_part;
 
   for (int i = 0; i != fanout; ++i)
     part[i] = &buffer[i]->tuple[buffer[i]->tuples];
@@ -130,16 +131,14 @@ PartitionTask::DoPartition(thread_t *my)
     
     buffer[i]->tuples = (index & block_mask); // set the new size
   }
-
-  free(wc_count);
-  free(wc_buf);
-  free(part);
 }
 
 
 
 void PartitionTask::Finish(thread_t* my)
 {
+  //  my->memm->Recycle(part_);
+
   in_->Commit();
 
   // check if I am the last one to finish?
@@ -209,11 +208,13 @@ void PartitionTask::Run(thread_t *my)
   perf_counter_t before = perf_read(my->perf);
 
   DoPartition(my);
-  Finish(my);
-
   perf_counter_t after = perf_read(my->perf);
   perf_counter_t state = perf_counter_diff(before, after);
 
   perf_counter_aggr(&my->stage_counter[0], state);
+
+
+  Finish(my);
+
 }
 

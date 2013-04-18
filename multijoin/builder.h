@@ -19,7 +19,6 @@ struct build_arg_t
   pthread_barrier_t *barrier_alloc;
 
   double scalar_ratio;
-  uint32_t scalar_key;
 
   relation_t *rel;
 };
@@ -37,7 +36,13 @@ relation_t *parallel_build_relation_fk(const size_t ntuples, const int32_t maxid
 relation_t *
 build_scalar_skew(const size_t ntuples, const int32_t maxid,
                   const uint32_t nnodes, const uint32_t nthreads,
-                  uint32_t key, double ratio);
+                  double ratio);
+
+
+// Tuple placement skew
+relation_t *
+build_placement_skew(const size_t ntuples, const int32_t maxid,
+                     const uint32_t nnodes, const uint32_t nthreads, int q);
 
 
 #endif // BUILDER_H_
