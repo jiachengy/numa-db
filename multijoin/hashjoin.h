@@ -17,9 +17,10 @@ class PartitionTask : public Task
 {
  private:
   // Input partition
-  partition_t *part_;
+  partition_t *input_;
 
   // Parameters
+  int pass_;
   int shift_; // cluster bits
   int bits_; // radix bits per pass
   int fanout_;
@@ -27,10 +28,12 @@ class PartitionTask : public Task
 
   void Finish(thread_t *my);
   void DoPartition(thread_t *my);
+  void DoPartitionRemote(thread_t *my);
   
  public:
- PartitionTask(partition_t *part, int shift, int bits) : Task(OpPartition) {
-    part_ = part;
+ PartitionTask(partition_t *input, int shift, int bits) : Task(OpPartition) {
+    pass_ = (shift==0) ? 1 : 2;
+    input_ = input;
     shift_ = shift;
     bits_ = bits;
     fanout_ = 1 << bits;
@@ -48,6 +51,8 @@ class P2Task : public Task
 
   // Parameters
   int key_;
+  
+  bool scheduled_;
 
   void Finish(thread_t *my);
   
@@ -55,6 +60,7 @@ class P2Task : public Task
  P2Task(int key, Table *in, Table *out) : Task(OpPartition2) {
     subtasks_ = new Tasklist(in, out, ShareLocal);
     key_ = key;
+    scheduled_ = false;
   }
 
   ~P2Task() {
@@ -66,6 +72,10 @@ class P2Task : public Task
     my->batch_task = this;
     my->localtasks = subtasks_;
   }
+
+  bool scheduled() { return scheduled_; }
+  void schedule() { scheduled_ = true; }
+  size_t size() { return subtasks_->size(); }
 
   // the subtask has to be a PartitionTask
   void AddSubTask(PartitionTask *task) {

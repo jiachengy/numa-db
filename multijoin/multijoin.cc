@@ -131,8 +131,8 @@ void* work_thread(void *param)
       }
       // case 3: local tasks are not ready yet
       else { 
-        ++putbacks;
-        queue->Putback(my->batch_task->id(), my->batch_task);
+        //        ++putbacks;
+        //        queue->Putback(my->batch_task->id(), my->batch_task);
         my->batch_task = NULL;
         my->localtasks = NULL;
       }
@@ -151,38 +151,42 @@ void* work_thread(void *param)
     assert(task == NULL);
 
     // poll buffered stolen task
-    // if (my->stolentasks) {
-    //   task = my->stolentasks->FetchAtomic();
+    if (my->stolentasks) {
+      task = my->stolentasks->FetchAtomic();
       
-    //   // case 1: we steal a job
-    //   if (task) {
-    //     my->remote++;
-    //     run_task(task, my);
-    //     continue;
-    //   }
-    //   // case 2: the job we trying to steal is empty or has already exhausted
-    //   else {
-    //     my->stolentasks = NULL;
-    //   }
-    // }
+      // case 1: we steal a job
+      if (task) {
+        my->remote++;
+        run_task(task, my);
+        continue;
+      }
+      // case 2: the job we trying to steal is empty or has already exhausted
+      else {
+        my->stolentasks = NULL;
+      }
+    }
 
-    // assert(my->stolentasks == NULL);
+    assert(my->stolentasks == NULL);
 
-    // if (!my->stolentasks)
-    //   steal_local(my);
+    if (!my->stolentasks)
+      steal_local(my);
 
     
-    // if (!my->stolentasks) {
-    //   task = steal_remote(my);
-    //   if (task) {
-    //     my->remote++;
-    //     run_task(task, my);
-    //   }
-    // }
+    if (!my->stolentasks) {
+      task = steal_remote(my);
+      if (task) {
+        my->remote++;
+        run_task(task, my);
+      }
+    }
   }
 
-  logging("Putbacks: %d\n", putbacks);
-  logging("Remaining partition: %d\n", my->memm->available());
+  //  logging("Putbacks: %d\n", putbacks);
+  logging("Remaining memory[0]: %d MB\n",
+          my->memm[0]->available() / (1024 * 1024));
+
+  logging("Remaining memory[1]: %d MB\n",
+          my->memm[1]->available() / (1024 * 1024));
 
 #if PER_CORE == 1
   perf_stop(my->perf);
@@ -270,27 +274,11 @@ void Run(Environment *env)
 
   logging("Running time: %ld usec\n", t);
 
-  //  Table *tr = env->GetTable(0);
-  //  Table *trpass1 = env->GetTable(1);
-  //  Table *trpass2 = env->GetTable(2);
-  // Table *ts = env->GetTable(3);
-  // Table *tspass1 = env->GetTable(4);
-  // Table *tspass2 = env->GetTable(5);
-
-  // int shift1 = Params::kOffsetPass1;
-  // int mask1 = (((1 << Params::kNumBitsPass1) - 1) << shift1);
-  // int shift2 = Params::kNumRadixBits;
-  // int mask2 = (1 << Params::kNumRadixBits) - 1;
-  
-  // long long sum0 = tr->Validate(0, 0);
-  // long long sum1 = trpass1->Validate(mask1, shift1);
-  // long long sum2 = trpass2->Validate(mask2, shift2);
-
-  // logging("sum: %lld, sum1: %lld, sum2: %lld\n", sum0, sum1, sum2);
-
   Table *output = env->output_table();
-  logging("matches: %ld\n", output->tuples());
 
+  size_t matches = output->tuples();
+  logging("matches: %ld\n", matches);
+  logging("Throuput: %.2f M/sec\n", 1.0 * matches / t);
 #if PER_SYSTEM == 1
   perf_stop(perf);
   perf_destroy(perf);

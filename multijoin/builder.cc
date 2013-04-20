@@ -70,13 +70,13 @@ relation_destroy(relation_t *rel)
 }
 
 void
-random_gen(tuple_t *tuple, size_t ntuples, const int32_t maxid)
+random_gen(tuple_t *tuple, size_t ntuples, const int32_t minid, const int32_t maxid)
 {
   uint32_t seed = rand();
   rand_state *state = rand_init(seed);
 
   for (uint32_t i = 0; i < ntuples; i++) {
-    tuple[i].key = RAND_RANGE(maxid, state) + 1;
+    tuple[i].key = RAND_RANGE2(minid, maxid, state);
     tuple[i].payload = tuple[i].key;
   }
 
@@ -120,7 +120,7 @@ build_fk_thread(void *params)
   tuple_t *tuples = rel->tuples[node] + arg->offset;
   assert(tuples != NULL);
 
-  random_gen(tuples, arg->ntuples, arg->maxid);
+  random_gen(tuples, arg->ntuples, arg->minid, arg->maxid);
 
   /*
   int iters = arg->ntuples / arg->maxid;
@@ -178,7 +178,9 @@ build_pk_thread(void *params)
 }
 
 relation_t *
-parallel_build_relation_fk(const size_t ntuples, const int32_t maxid, const uint32_t nnodes, const uint32_t nthreads)
+parallel_build_relation_fk(const size_t ntuples, 
+                           const int32_t minid, const int32_t maxid,
+                           const uint32_t nnodes, const uint32_t nthreads)
 {
   assert(nnodes <= num_numa_nodes());
 
@@ -213,6 +215,7 @@ parallel_build_relation_fk(const size_t ntuples, const int32_t maxid, const uint
       args[tid].cpu = cpu_of_node(node, t);
       args[tid].node = node;
       args[tid].offset = offset;
+      args[tid].minid = minid;
       args[tid].maxid = maxid;
       args[tid].ntuples = (t == nthreads_on_node - 1) ? ntuples_lastthread : ntuples_per_thread;
       
@@ -371,26 +374,23 @@ build_scalar_thread(void *params)
   assert(tuples != NULL);
 
   size_t ntuples = arg->ntuples;
-  size_t skewed_tuples = ntuples * arg->scalar_ratio;
 
-  logging("%ld tuples set to 1\n", skewed_tuples);
-
-  // set the first several keys to the scalar key 1
-  for (uint32_t i = 0; i != skewed_tuples; ++i) {
+  for (uint32_t i = 0; i != arg->scalars; ++i) {
     tuples[i].key = 1;
-    tuples[i].payload = 1;
+    tuples[i].payload = tuples[i].key;
   }
 
-  uint32_t seed = rand();
-  rand_state *state = rand_init(seed);
+  rand_state *state = rand_init(rand());
 
-  // generate remaining keys from 2 - maxid + 1
-  for (uint32_t i = skewed_tuples; i != ntuples; i++) {
+  // generate keys from 2 - maxid
+  for (uint32_t i = arg->scalars; i != ntuples; ++i) {
     tuples[i].key = RAND_RANGE2(2, arg->maxid, state);
     tuples[i].payload = tuples[i].key;
   }
 
-  knuth_shuffle(tuples, ntuples, time(NULL));
+  knuth_shuffle(tuples, ntuples, rand());
+
+   free(state);
 
   return NULL;
 }
@@ -399,7 +399,7 @@ build_scalar_thread(void *params)
 relation_t *
 build_scalar_skew(const size_t ntuples, const int32_t maxid,
                   const uint32_t nnodes, const uint32_t nthreads,
-                  double ratio)
+                  int scalar_skew)
 {
   assert(nnodes <= num_numa_nodes());
 
@@ -419,7 +419,10 @@ build_scalar_skew(const size_t ntuples, const int32_t maxid,
   size_t nthreads_per_node = nthreads / nnodes;
   size_t nthreads_on_lastnode = nthreads - nthreads_per_node * (nnodes - 1);
 
-  int tid = 0;
+  size_t scalars_per_thread = scalar_skew / nthreads;
+  size_t scalars_lastthread = scalar_skew - scalars_per_thread * (nthreads-1);
+
+  uint32_t tid = 0;
   for (uint32_t node = 0; node < nnodes; ++node) {
     rel->ntuples_on_node[node] = (node == nnodes-1) ? ntuples_on_lastnode : ntuples_per_node;
     size_t nthreads_on_node = (node == nnodes - 1) ? nthreads_on_lastnode : nthreads_per_node;
@@ -441,17 +444,15 @@ build_scalar_skew(const size_t ntuples, const int32_t maxid,
 
       args[tid].barrier_alloc = &barriers[node];
       args[tid].rel = rel;
-
-      args[tid].scalar_ratio = ratio;
+      args[tid].scalars = (tid == nthreads-1) ? scalars_lastthread : scalars_per_thread;
     }
   }
 
   for (uint32_t i = 0; i < nthreads; i++)
     pthread_create(&threads[i], NULL, build_scalar_thread, (void*)&args[i]);
 
-  for (uint32_t i = 0; i < nthreads; i++) {
+  for (uint32_t i = 0; i < nthreads; i++)
     pthread_join(threads[i], NULL);
-  }
 
   for (uint32_t node = 0; node < nnodes; ++node)
     pthread_barrier_destroy(&barriers[node]);
@@ -501,6 +502,7 @@ build_placement_skew(const size_t ntuples, const int32_t maxid,
       args[tid].cpu = cpu_of_node(node, t);
       args[tid].node = node;
       args[tid].offset = offset;
+      args[tid].minid = 1;
       args[tid].maxid = maxid;
       args[tid].ntuples = (t == nthreads_on_node - 1) ? ntuples_lastthread : ntuples_per_thread;
       

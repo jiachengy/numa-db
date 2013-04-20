@@ -17,11 +17,16 @@ int main(int argc, char *argv[])
 #ifdef USE_PERF
   perf_lib_init(NULL, NULL);
 #endif
+  size_t rsize = 1024L * 1024L * 1024L; // 128M
+  size_t ssize = 1024L * 1024L * 1024L; // 16M
 
   int nodes = 1;
   int nthreads = 1;
   int tps_skew = 1;
-  double scalar_skew = 0;
+  double scalar_ratio_r = 0.1;
+  double scalar_ratio_s = 0.1;
+  int scalar_skew_r = 1;
+  int scalar_skew_s = 1;
 
   if (argc > 1)
     nthreads = atoi(argv[1]);
@@ -29,20 +34,29 @@ int main(int argc, char *argv[])
     nodes = atoi(argv[2]);
   if (argc > 3)
     tps_skew = atoi(argv[3]);
-  if (argc > 4)
-    scalar_skew = atof(argv[4]);
+  if (argc > 4) {
+    scalar_ratio_r = atof(argv[4]);
+    scalar_skew_r = rsize * scalar_ratio_r;
+  }
+  if (argc > 5) {
+    scalar_ratio_s = atof(argv[5]);
+    scalar_skew_s = ssize * scalar_ratio_s;
+  }
 
-  size_t rsize = 1024L * 1024L * 128; // 128M
-  size_t ssize = 1024L * 1024L * 128; // 16M
+  //  logging("run with scalar skew: %d, %d\n", scalar_skew_r, scalar_skew_s);
 
+  relation_t *relR = parallel_build_relation_fk(rsize, 2, rsize, nodes, nthreads);
   //  relation_t * relR = build_placement_skew(rsize, rsize, nodes, nthreads, tps_skew);
-  relation_t * relR = build_scalar_skew(rsize, rsize, nodes, nthreads, scalar_skew);
+  //  relation_t * relR = build_scalar_skew(rsize, rsize, nodes, nthreads, scalar_skew_r);
   logging("Building R table with %ld tuples done.\n", rsize);
 
-  relation_t *relS = parallel_build_relation_fk(ssize, rsize, nodes, nthreads);
+  // relation_t * relS = parallel_build_relation_pk(ssize, nodes, nthreads);
+  //  relation_t * relS = build_scalar_skew(ssize, ssize, nodes, nthreads, scalar_skew_s);
+  relation_t *relS = parallel_build_relation_fk(ssize, 2, rsize, nodes, nthreads);
   logging("Building S table with %ld tuples done.\n", ssize);
 
-  gConfig.mem_per_thread = rsize / nthreads * 64;
+  gConfig.mem_per_thread = (rsize+ssize) / nthreads * 3;
+  //  gConfig.mem_per_thread = rsize / nthreads * 64;
 
   Environment *env = new Environment(nodes, nthreads);
 

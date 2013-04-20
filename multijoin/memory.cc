@@ -4,8 +4,9 @@
 #include "memory.h"
 #include "util.h" // alloc, dealloc
 
-Memory::Memory(int node, size_t capacity, size_t capacity_hist)
-  : node_(node), capacity_(capacity), capacity_hist_(capacity_hist)
+Memory::Memory(int node, size_t capacity, size_t unit_size, size_t capacity_hist)
+  : node_(node), capacity_(capacity), 
+    unit_size_(unit_size), capacity_hist_(capacity_hist)
 {
   node_bind(node);
   
@@ -19,13 +20,13 @@ Memory::Memory(int node, size_t capacity, size_t capacity_hist)
   memset(base_hist_, 0x0, sizeof(uint32_t) * capacity_hist_);
   size_hist_ = 0;
 
-  int max_partitions = capacity / (Params::kMaxTuples + Params::kPaddingTuples);
+  int max_partitions = capacity / unit_size;
   int max_hts = Params::kFanoutTotal;
   
-  Alloc(max_partitions);
+  AllocSlots(max_partitions);
   AllocHT(max_hts);
 
-  //  pthread_mutex_init(&mutex_, NULL);
+  pthread_mutex_init(&mutex_, NULL);
 }
 
 Memory::~Memory() {
@@ -42,18 +43,18 @@ Memory::~Memory() {
   dealloc(base_, sizeof(tuple_t) * capacity_);
   dealloc(base_hist_, sizeof(uint32_t) * capacity_hist_);
 
-  //  pthread_mutex_destroy(&mutex_);
+  pthread_mutex_destroy(&mutex_);
 }
 
 void
-Memory::Alloc(size_t size)
+Memory::AllocSlots(size_t max_partitions)
 {
-  for (uint32_t i = 0; i < size; i++) {
+  for (uint32_t i = 0; i < max_partitions; i++) {
     partition_t *p = partition_init(node_);
     p->tuple = &base_[size_];
     p->offset = size_;
-    size_ += (Params::kMaxTuples + Params::kPaddingTuples);
-    assert(size_ <= capacity_);
+    p->memm = this;
+    size_ += unit_size_;
     freelist_.push(p);
   }
 }
@@ -69,19 +70,17 @@ Memory::AllocHT(size_t size)
   }
 }
 
-
 partition_t*
 Memory::GetPartition()
 {
-  //  pthread_mutex_lock(&mutex_);
+  pthread_mutex_lock(&mutex_);
 
-  if (freelist_.empty()) 
-    assert(false);
+  assert(!freelist_.empty());
 
   partition_t *p = freelist_.front();
   freelist_.pop();
 
-  //  pthread_mutex_unlock(&mutex_);
+  pthread_mutex_unlock(&mutex_);
 
   return p;
 }
@@ -125,11 +124,13 @@ Memory::GetHashtable(size_t tuples, size_t partitions)
 void
 Memory::Recycle(partition_t *p)
 {
-  //  pthread_mutex_lock(&mutex_);
-  //  assert(p->node == node_);
+  pthread_mutex_lock(&mutex_);
+  assert(p->node == node_);
+  
   partition_reset(p);
   freelist_.push(p);
-  //  pthread_mutex_unlock(&mutex_);
+
+  pthread_mutex_unlock(&mutex_);
 }
 
 

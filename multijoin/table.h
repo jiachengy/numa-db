@@ -15,6 +15,7 @@ class Table;
 #include "hashtable.h" // hashtable_t
 #include "types.h" // OpType
 #include "util.h" // get_running_node
+#include "memory.h"
 
 using namespace std;
 
@@ -22,6 +23,8 @@ struct partition_t {
   int node; // numa location
   int radix; // partition key
 
+  size_t capacity;
+  
   tuple_t * tuple;
   size_t tuples;
   uint64_t offset;
@@ -32,6 +35,8 @@ struct partition_t {
 
   ShareLevel share;
   pthread_mutex_t mutex; // protect tuple place allocation
+
+  Memory *memm;
 };
 // __attribute__((aligned(CACHE_LINE_SIZE)));
 

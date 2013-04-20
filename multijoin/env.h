@@ -59,7 +59,7 @@ struct thread_t {
 
   node_t *node; // pointer to local node info
   Environment *env; // pointer to global info
-  Memory *memm; // memory manager
+  Memory *memm[2]; // memory manager
 
   // local buffer
   buffer_t *buffer;

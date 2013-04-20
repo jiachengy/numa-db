@@ -154,6 +154,14 @@ class Taskqueue
     pthread_mutex_unlock(&mutex_);
   }
 
+  void UnblockNext(uint32_t taskid) {
+    assert(taskid + 1 != queues_.size());
+    pthread_mutex_lock(&mutex_);
+    actives_.push_back(queues_[taskid+1]);
+    pthread_mutex_unlock(&mutex_);
+  }
+
+
   void Promote(int taskid) {
     pthread_mutex_lock(&mutex_);
     actives_.push_front(queues_[taskid]);

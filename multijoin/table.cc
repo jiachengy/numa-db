@@ -13,9 +13,11 @@ partition_t* partition_init(int node)
   partition->ready = false;
   partition->tuple = NULL;
   partition->tuples = 0;
+  partition->capacity = 0;
   partition->offset = -1;
   partition->hashtable = NULL;
   partition->share = ShareLocal;
+  partition->memm = NULL;
   pthread_mutex_init(&partition->mutex, NULL);
   return partition;
 } 

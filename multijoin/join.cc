@@ -34,7 +34,7 @@ partition_t * BuildTask::Build(thread_t * my)
   tuple_t **part = my->part;
 
   // dynamic request from memm
-  partition_t *htp = my->memm->GetHashtable(total_tuples, partitions + 1);
+  partition_t *htp = my->memm[0]->GetHashtable(total_tuples, partitions + 1);
   assert(htp->hashtable != NULL);
   htp->radix = radix_;
   uint32_t *sum = htp->hashtable->sum;
@@ -121,6 +121,10 @@ void BuildTask::Finish(thread_t* my, partition_t *htp)
   ProbeTask **probetask = my->env->GetProbeTaskByTable(probe_->id());
   queue->AddTask(probe_->id(), probetask[radix_]);
 
+  node_t *nodes = my->env->nodes();
+  for (int node = 0; node < my->env->nnodes(); ++node)
+    nodes[node].queue->UnblockNext(in_->id());
+
   // check if I am the last one to finish?
   if (!in_->done())
     return;
@@ -148,6 +152,8 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
   int shift = Params::kNumRadixBits;
   int32_t mask  = (partitions-1) << shift;
 
+  Memory * memm = my->memm[1]; // use the smaller partition size
+
   // check buffer compatibility
   if (!buffer_compatible(my->buffer, out_, input_->radix)) {
     pthread_mutex_lock(&my->lock);
@@ -165,7 +171,7 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
   }
 
   if (my->buffer->partition[0] == NULL) {
-    my->buffer->partition[0] = my->memm->GetPartition();
+    my->buffer->partition[0] = memm->GetPartition();
     my->buffer->partition[0]->radix = input_->radix;
   }    
 
@@ -191,7 +197,7 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
           outbuf->tuples = Params::kMaxTuples;
           FlushBuffer(my->buffer->table, outbuf, my->env);
           
-          outbuf = my->memm->GetPartition();
+          outbuf = memm->GetPartition();
           outbuf->radix = input_->radix;
           output = outbuf->tuple;
           outend = outbuf->tuple + Params::kMaxTuples;
@@ -230,6 +236,10 @@ void UnitProbeTask::Run(thread_t *my)
 
 void UnitProbeTask::Finish(thread_t* my)
 {
+  //  my->memm->Recycle(input_);
+  if (input_->memm)
+    input_->memm->Recycle(input_);
+  
   in_->Commit();
 
   // check if I am the last one to finish?

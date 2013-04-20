@@ -129,13 +129,17 @@ init_thread_mem(void *params)
 
   thread_t *args = (thread_t*)params;
   cpu_bind(args->cpu);
-  args->wc_buf = (cache_line_t*)alloc_aligned(Params::kFanoutPass1 * sizeof(cache_line_t), CACHE_LINE_SIZE);
-  args->wc_count = (uint32_t*)malloc(Params::kFanoutPass1 * sizeof(uint32_t));
-  args->wc_part = (tuple_t**)malloc(Params::kFanoutPass1 * sizeof(tuple_t*));
+  args->wc_buf = (cache_line_t*)alloc_aligned(Params::kFanoutPass2 * sizeof(cache_line_t), CACHE_LINE_SIZE);
+  args->wc_count = (uint32_t*)malloc(Params::kFanoutPass2 * sizeof(uint32_t));
+  args->wc_part = (tuple_t**)malloc(Params::kFanoutPass2 * sizeof(tuple_t*));
 
   args->hist = (uint32_t*)malloc(partitions * sizeof(uint32_t));
   args->part = (tuple_t**)malloc(partitions * sizeof(tuple_t*));
-  args->memm = new Memory(args->node_id, gConfig.mem_per_thread, 1024*1024*128);
+
+  args->memm[0] = new Memory(args->node_id, gConfig.mem_per_thread,
+                             Params::kMaxTuples, 1024*1024*128);
+  args->memm[1] = new Memory(args->node_id, gConfig.mem_per_thread,
+                             Params::kSmallMaxTuples, 0);
 
   return NULL;
 }
@@ -223,8 +227,10 @@ Environment::TwoPassPartition(relation_t *relR)
     tasks_.push_back(rpass1tasks);
 
     Tasklist *rpass2tasks = new Tasklist(rpass1tb, rpass2tb, ShareNode);    
+    // do not activate them here
     for (int key = 0; key < Params::kFanoutPass1; ++key) {
-      rpass2tasks->AddTask(p2tasksR[node][key]);
+      //      rpass2tasks->AddTask(p2tasksR[node][key]);
+      //      p2tasksR[node][key]->schedule();
     }
 
     tasks_.push_back(rpass2tasks);
@@ -232,7 +238,7 @@ Environment::TwoPassPartition(relation_t *relR)
     tq->AddList(rpass1tasks);
     tq->AddList(rpass2tasks);
     tq->Unblock(rpass1tasks->id());
-    //    tq->Unblock(rpass2tasks->id());
+    tq->Unblock(rpass2tasks->id());
 
     // create partition task from table R
     list<partition_t*>& pr = rt->GetPartitionsByNode(node);
@@ -297,24 +303,28 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
     tasks_.push_back(spass1tasks);
 
     Tasklist *rpass2tasks = new Tasklist(rpass1tb, rpass2tb, ShareNode);    
-    for (int key = 0; key < Params::kFanoutPass1; ++key)
-      rpass2tasks->AddTask(p2tasksR[node][key]);
+    for (int key = 0; key < Params::kFanoutPass1; ++key) {
+      // rpass2tasks->AddTask(p2tasksR[node][key]);
+      // p2tasksR[node][key]->schedule();
+    }
     tasks_.push_back(rpass2tasks);
 
     Tasklist *spass2tasks = new Tasklist(spass1tb, spass2tb, ShareNode);    
-    for (int key = 0; key < Params::kFanoutPass1; ++key)
-      spass2tasks->AddTask(p2tasksS[node][key]);
+    for (int key = 0; key < Params::kFanoutPass1; ++key) {
+      // spass2tasks->AddTask(p2tasksS[node][key]);
+      // p2tasksS[node][key]->schedule();
+    }
     tasks_.push_back(spass2tasks);
 
 
     tq->AddList(rpass1tasks);
     tq->AddList(rpass2tasks);
     tq->Unblock(rpass1tasks->id());
-    //    tq->Unblock(rpass2tasks->id());
+    tq->Unblock(rpass2tasks->id());
     tq->AddList(spass1tasks);
     tq->AddList(spass2tasks);
     tq->Unblock(spass1tasks->id());
-    //    tq->Unblock(rpass2tasks->id());
+    tq->Unblock(rpass2tasks->id());
 
     // create partition task from table R
     list<partition_t*>& pr = rt->GetPartitionsByNode(node);
@@ -413,7 +423,6 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
 #else
   Table *rpass1tb = new Table(OpBuild, nnodes_, Params::kFanoutPass1);
 #endif
-  Table *rbuild = new Table(OpProbe, nnodes_, Params::kFanoutTotal);
 
   Table *st = Table::BuildTableFromRelation(relS);
   st->set_type(OpPartition);
@@ -424,6 +433,9 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
 #else
   Table *spass1tb = new Table(OpProbe, nnodes_, Params::kFanoutPass1);
 #endif
+
+  Table *rbuild = new Table(OpProbe, nnodes_, Params::kFanoutTotal);
+
   Table *result = new Table(OpNone, nnodes_, Params::kFanoutTotal);
 
 
@@ -515,9 +527,9 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
     tq->AddList(buildR);
     tq->AddList(probetasks);
     tq->Unblock(rpass1tasks->id());
-    tq->Unblock(rpass2tasks->id());
-    tq->Unblock(spass1tasks->id());
-    tq->Unblock(rpass2tasks->id());
+    //    tq->Unblock(rpass2tasks->id());
+    //    tq->Unblock(spass1tasks->id());
+    //    tq->Unblock(spass2tasks->id());
 
     // create partition task from table R
     list<partition_t*>& pr = rt->GetPartitionsByNode(node);
