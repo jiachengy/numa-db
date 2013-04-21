@@ -22,10 +22,9 @@ class Params
 {
  public:
   //  static size_t kMaxHtTuples;
-  static const size_t kPartitionSize = 1024 * 512; // 1M tuples = 8M
-  static const size_t kSmallPartitionSize = 1024 * 32; // 128K tuples = 1M
+  static const size_t kPartitionSize = 1024 * 1024; // 1M
+  static const size_t kSmallPartitionSize = 1024 * 256; // 256K: L2 size
 
-  //  static const size_t kSmallPartitionSize = 1024 * 128; // 128K tuples = 1M
   static const size_t kMaxTuples = kPartitionSize / sizeof(tuple_t);
   static const size_t kSmallMaxTuples = kSmallPartitionSize / sizeof(tuple_t);
   static const int kTuplesPerCacheLine = CACHE_LINE_SIZE / sizeof(tuple_t);

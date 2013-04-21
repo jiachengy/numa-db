@@ -40,7 +40,6 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads)
 {
   nodes_ = (node_t*)malloc(sizeof(node_t) * nnodes_);
   threads_ = (thread_t*)malloc(sizeof(thread_t) * nthreads);
-  //  memm_ = (Memory**)malloc(sizeof(Memory*) * nnodes_);
   queries_ = 0;
 
   uint32_t nthreads_per_node = nthreads / nnodes_;
@@ -96,8 +95,6 @@ Environment::~Environment()
     delete nodes_[node].queue;
     free(nodes_[node].groups);
     pthread_mutex_destroy(&nodes_[node].lock);
-
-    //    delete memm_[node];
   }
 
   for (uint32_t tid = 0; tid != nthreads_; tid++)
@@ -105,7 +102,6 @@ Environment::~Environment()
 
   free(threads_);
   free(nodes_);
-  //  free(memm_);
   
   // deallocate tables
   int i = 0;
@@ -137,9 +133,9 @@ init_thread_mem(void *params)
   args->part = (tuple_t**)malloc(partitions * sizeof(tuple_t*));
 
   args->memm[0] = new Memory(args->node_id, gConfig.mem_per_thread,
-                             Params::kMaxTuples, 1024*1024*128);
+                             Params::kMaxTuples, 0);
   args->memm[1] = new Memory(args->node_id, gConfig.mem_per_thread,
-                             Params::kSmallMaxTuples, 0);
+                             Params::kSmallMaxTuples, 1024*1024*128);
 
   return NULL;
 }
@@ -229,8 +225,8 @@ Environment::TwoPassPartition(relation_t *relR)
     Tasklist *rpass2tasks = new Tasklist(rpass1tb, rpass2tb, ShareNode);    
     // do not activate them here
     for (int key = 0; key < Params::kFanoutPass1; ++key) {
-      //      rpass2tasks->AddTask(p2tasksR[node][key]);
-      //      p2tasksR[node][key]->schedule();
+      //           rpass2tasks->AddTask(p2tasksR[node][key]);
+      //           p2tasksR[node][key]->set_schedule(true);
     }
 
     tasks_.push_back(rpass2tasks);
@@ -238,7 +234,7 @@ Environment::TwoPassPartition(relation_t *relR)
     tq->AddList(rpass1tasks);
     tq->AddList(rpass2tasks);
     tq->Unblock(rpass1tasks->id());
-    tq->Unblock(rpass2tasks->id());
+    //    tq->Unblock(rpass2tasks->id());
 
     // create partition task from table R
     list<partition_t*>& pr = rt->GetPartitionsByNode(node);
@@ -528,7 +524,7 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
     tq->AddList(probetasks);
     tq->Unblock(rpass1tasks->id());
     //    tq->Unblock(rpass2tasks->id());
-    //    tq->Unblock(spass1tasks->id());
+    tq->Unblock(spass1tasks->id());
     //    tq->Unblock(spass2tasks->id());
 
     // create partition task from table R

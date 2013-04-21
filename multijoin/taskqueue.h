@@ -23,14 +23,21 @@ class Task
   const OpType type_;
   Table *in_;
   Table *out_;
+  bool scheduled_; // is it in the queue?
 
  public:
-  Task(OpType type) : type_(type), in_(NULL), out_(NULL) {}
+ Task(OpType type) : type_(type),
+    in_(NULL), out_(NULL),
+    scheduled_(false) {}
  
   virtual ~Task() {}
 
   virtual void Run(thread_t *args) = 0;    
   OpType type() { return type_; }
+
+  bool scheduled() { return scheduled_; }
+  void set_schedule(bool schedule) { scheduled_ = schedule; }
+  
 
   void set_in(Table *in) { in_ = in; }
   void set_out(Table *out) { out_ = out; }

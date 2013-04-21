@@ -99,7 +99,7 @@ void* work_thread(void *param)
 
 #endif
 
-  int putbacks = 0;
+  //  int putbacks = 0;
   int cpu = my->cpu;
   cpu_bind(cpu);
 
@@ -133,6 +133,7 @@ void* work_thread(void *param)
       else { 
         //        ++putbacks;
         //        queue->Putback(my->batch_task->id(), my->batch_task);
+        my->batch_task->set_schedule(false);
         my->batch_task = NULL;
         my->localtasks = NULL;
       }
@@ -275,10 +276,20 @@ void Run(Environment *env)
   logging("Running time: %ld usec\n", t);
 
   Table *output = env->output_table();
-
   size_t matches = output->tuples();
   logging("matches: %ld\n", matches);
   logging("Throuput: %.2f M/sec\n", 1.0 * matches / t);
+
+  // list<partition_t*> &ps = output->GetPartitionsByKey(0);
+  // logging("partition 0 has %d blocks\n", ps.size());
+  // size_t sz = 0;
+  // for (list<partition_t*>::iterator it = ps.begin();
+  //      it != ps.end(); ++it) {
+  //   sz += (*it)->tuples;
+  //   logging("p[0] on node %d: %d\n", (*it)->node, (*it)->tuples);
+  // }
+  // logging("partition 0 has %d tuples\n", sz);
+
 #if PER_SYSTEM == 1
   perf_stop(perf);
   perf_destroy(perf);

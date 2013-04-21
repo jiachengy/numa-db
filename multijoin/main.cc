@@ -17,8 +17,8 @@ int main(int argc, char *argv[])
 #ifdef USE_PERF
   perf_lib_init(NULL, NULL);
 #endif
-  size_t rsize = 1024L * 1024L * 1024L; // 128M
-  size_t ssize = 1024L * 1024L * 1024L; // 16M
+  size_t rsize = 1024L * 1024L * 1024L;
+  size_t ssize = 1024L * 1024L * 1024L;
 
   int nodes = 1;
   int nthreads = 1;
@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
   relation_t *relS = parallel_build_relation_fk(ssize, 2, rsize, nodes, nthreads);
   logging("Building S table with %ld tuples done.\n", ssize);
 
-  gConfig.mem_per_thread = (rsize+ssize) / nthreads * 3;
+  gConfig.mem_per_thread = (rsize+ssize) / nthreads * 5;
   //  gConfig.mem_per_thread = rsize / nthreads * 64;
 
   Environment *env = new Environment(nodes, nthreads);

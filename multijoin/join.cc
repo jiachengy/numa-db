@@ -34,7 +34,7 @@ partition_t * BuildTask::Build(thread_t * my)
   tuple_t **part = my->part;
 
   // dynamic request from memm
-  partition_t *htp = my->memm[0]->GetHashtable(total_tuples, partitions + 1);
+  partition_t *htp = my->memm[1]->GetHashtable(total_tuples, partitions + 1);
   assert(htp->hashtable != NULL);
   htp->radix = radix_;
   uint32_t *sum = htp->hashtable->sum;

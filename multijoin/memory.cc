@@ -90,8 +90,8 @@ Memory::GetHashtable(size_t tuples, size_t partitions)
 {
   //  pthread_mutex_lock(&mutex_);
 
-  size_t parts = tuples / Params::kMaxTuples;
-  if (parts * Params::kMaxTuples < tuples)
+  size_t parts = tuples / unit_size_;
+  if (parts * unit_size_ < tuples)
     ++parts;
 
   assert(!freeht_.empty());

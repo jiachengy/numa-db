@@ -52,15 +52,13 @@ class P2Task : public Task
   // Parameters
   int key_;
   
-  bool scheduled_;
-
   void Finish(thread_t *my);
   
  public:
  P2Task(int key, Table *in, Table *out) : Task(OpPartition2) {
     subtasks_ = new Tasklist(in, out, ShareLocal);
     key_ = key;
-    scheduled_ = false;
+
   }
 
   ~P2Task() {
@@ -73,8 +71,6 @@ class P2Task : public Task
     my->localtasks = subtasks_;
   }
 
-  bool scheduled() { return scheduled_; }
-  void schedule() { scheduled_ = true; }
   size_t size() { return subtasks_->size(); }
 
   // the subtask has to be a PartitionTask

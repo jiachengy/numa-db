@@ -21,9 +21,11 @@ void FlushBuffer(Table * table, partition_t *p, Environment *env)
 
     // or we automatically add all when the partition finishes
     // if there is not enough data
-    if (!p2task->scheduled() && p2task->size() >= Params::kFanoutPass2 * 2) {
+
+    // Expected size * 0.75
+    if (!p2task->scheduled() && p2task->size() >= Params::kFanoutPass2 * 0.75) {
       env->nodes()[p->node].queue->AddTask(table->id(), p2task);
-      p2task->schedule();
+      p2task->set_schedule(true);
     }
   }
   else if (table->type() == OpProbe) {
@@ -348,9 +350,7 @@ void PartitionTask::Finish(thread_t* my)
     break;
   }
 
-  // activate all tasks that
-  // 1. has not been scheduled
-  // 2. (OPTIONAL) if not empty
+  // activate all tasks that have not been scheduled yet
   if (out_->type() == OpPartition2) {
     P2Task ***p2tasks = my->env->GetP2TaskByTable(out_->id());
     for (int radix = 0; radix != Params::kFanoutPass1; ++radix) {
@@ -358,7 +358,7 @@ void PartitionTask::Finish(thread_t* my)
         P2Task *p2task = p2tasks[node][radix];
         if (!p2task->scheduled()) {
           my->env->nodes()[node].queue->AddTask(out_->id(), p2task);
-          p2task->schedule();
+          p2task->set_schedule(true);
         }
       }
     }
