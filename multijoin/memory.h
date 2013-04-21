@@ -20,7 +20,12 @@ class Memory
   size_t capacity_;
   size_t unit_size_;
   size_t size_;
+#ifdef COLUMN_WISE
+  intkey_t * keybase_;
+  value_t * valbase_;
+#else
   tuple_t * base_;
+#endif
 
   size_t capacity_hist_;
   size_t size_hist_;
@@ -45,7 +50,13 @@ class Memory
 
   size_t unit_size() { return unit_size_; }
 
+#ifdef COLUMN_WISE
+  intkey_t * keybase() { return keybase_; }
+  value_t * valbase() { return valbase_; }
+#else
   tuple_t* baseptr() { return (tuple_t*)base_; }
+#endif
+
   size_t available() { return freelist_.size() * unit_size_ * sizeof(tuple_t); }
 
   partition_t * GetPartition();	

@@ -22,8 +22,8 @@ class Params
 {
  public:
   //  static size_t kMaxHtTuples;
-  static const size_t kPartitionSize = 1024 * 1024; // 1M
-  static const size_t kSmallPartitionSize = 1024 * 256; // 256K: L2 size
+  static const size_t kPartitionSize = 1024; // 1M
+  static const size_t kSmallPartitionSize = 1024; // 256K: L2 size
 
   static const size_t kMaxTuples = kPartitionSize / sizeof(tuple_t);
   static const size_t kSmallMaxTuples = kSmallPartitionSize / sizeof(tuple_t);
@@ -31,7 +31,7 @@ class Params
   static const size_t kPaddingTuples = 0;
   //  static const int kHtInflateRate = 1; // can only be 2^k
 
-  static const int kNumRadixBits = 14;
+  static const int kNumRadixBits = 8;
   static const int kNumPasses = 2; 
 
   static const int kNumBitsPass1 = kNumRadixBits / kNumPasses;

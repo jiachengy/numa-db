@@ -13,7 +13,11 @@ struct tuple_t {
 };
 
 typedef struct {
+#ifdef COLUMN_WISE
+  uint32_t data[16];
+#else
   uint64_t data[8];
+#endif
 } cache_line_t;
 
 
@@ -35,7 +39,14 @@ enum ShareLevel {
 
 struct relation_t
 {
-  tuple_t **tuples;
+
+#ifdef COLUMN_WISE
+  intkey_t **key;
+  value_t **value;
+#else
+	tuple_t **tuples;
+#endif
+
   size_t *ntuples_on_node;
   size_t ntuples;
   uint32_t nnodes;

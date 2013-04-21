@@ -11,7 +11,12 @@ partition_t* partition_init(int node)
   partition->radix = -1;
   partition->done = false;
   partition->ready = false;
+#ifdef COLUMN_WISE
+  partition->key = NULL;
+  partition->value = NULL;
+#else
   partition->tuple = NULL;
+#endif
   partition->tuples = 0;
   partition->capacity = 0;
   partition->offset = -1;
@@ -122,24 +127,33 @@ Table::BuildTableFromRelation(relation_t *rel)
     node_bind(node); // we ensure all the partition objects are allocated on that node
 
     size_t ntuples = rel->ntuples_on_node[node];
+#ifdef COLUMN_WISE
+	intkey_t * key = rel->key[node];
+	value_t * value = rel->value[node];
+#else
     tuple_t *tuple = rel->tuples[node];
+#endif
     while (ntuples > 0) {
       size_t psize = (ntuples > ntuples_per_partition) ? ntuples_per_partition : ntuples;
       partition_t *p = partition_init(node);
+#ifdef COLUMN_WISE
+	  p->key = key;
+	  p->value = value;
+#else
       p->tuple = tuple;
+#endif
       p->tuples = psize;
       p->radix = 0; // to make the radix computation in partitioning easier
+#ifdef COLUMN_WISE
+	  key += psize;
+	  value += psize;
+#else
       tuple += psize;
+#endif
       ntuples -= psize;
       table->AddPartition(p);
     }
   }
-  
-  // initialize all remaining nodes to NULL
-  for (; node != num_numa_nodes(); ++node) {
-    // do nothing
-  }
-
 
   table->set_ready();
   return table;

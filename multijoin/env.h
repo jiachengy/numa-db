@@ -65,11 +65,22 @@ struct thread_t {
   buffer_t *buffer;
   pthread_mutex_t lock;
 
-  tuple_t **part; // output buffer holder for build
+
   uint32_t *hist; // hist holder for build
+#ifdef COLUMN_WISE
+  intkey_t **part_key; // output buffer holder for build
+  value_t **part_value; // output buffer holder for build
+
+  cache_line_t *wc_buf_key;
+  cache_line_t *wc_buf_value;
+  intkey_t **wc_part_key;
+  value_t **wc_part_value;
+#else
+  tuple_t **part; // output buffer holder for build
   cache_line_t *wc_buf;
-  uint32_t *wc_count;
   tuple_t **wc_part;
+#endif
+  uint32_t *wc_count;
 
   // statistics
   uint32_t local;

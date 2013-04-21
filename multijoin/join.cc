@@ -28,11 +28,20 @@ partition_t * BuildTask::Build(thread_t * my)
   // preallocate the folllowing in thread
   my->hist   = (uint32_t*)realloc(my->hist, partitions * sizeof(uint32_t));
   memset(my->hist, 0x0, partitions * sizeof(uint32_t));
+#ifdef COLUMN_WISE
+  my->part_key = (intkey_t**)realloc(my->part_key, partitions * sizeof(intkey_t*));   // temp output buffer
+  my->part_value = (value_t**)realloc(my->part_value, partitions * sizeof(value_t*));   // temp output buffer
+#else
   my->part = (tuple_t**)realloc(my->part, partitions * sizeof(tuple_t*));   // temp output buffer
+#endif
   
   uint32_t *hist = my->hist;
+#ifdef COLUMN_WISE
+  intkey_t **part_key = my->part_key;
+  value_t **part_value = my->part_value;
+#else
   tuple_t **part = my->part;
-
+#endif
   // dynamic request from memm
   partition_t *htp = my->memm[1]->GetHashtable(total_tuples, partitions + 1);
   assert(htp->hashtable != NULL);
@@ -41,10 +50,18 @@ partition_t * BuildTask::Build(thread_t * my)
 
   for(list<partition_t*>::iterator it = parts.begin();
       it != parts.end(); ++it ) {
+#ifdef COLUMN_WISE
+    intkey_t * key = (*it)->key;
+#else
     tuple_t * tuple = (*it)->tuple;
+#endif
     size_t tuples = (*it)->tuples;
     for (uint64_t i = 0; i != tuples ; ++i) {
+#ifdef COLUMN_WISE
+      uint32_t hash = mhash(key[i], mask, shift);
+#else
       uint32_t hash = mhash(tuple[i].key, mask, shift);
+#endif
       hist[hash]++;
     }
   }
@@ -52,43 +69,35 @@ partition_t * BuildTask::Build(thread_t * my)
   /* prefix sum on histogram */
   for( uint32_t i = 0; i != partitions; i++ ) {
     sum[i] = i ? sum[i-1] + hist[i-1] : 0;
+#ifdef COLUMN_WISE
+    part_key[i] = htp->hashtable->key + sum[i];
+    part_value[i] = htp->hashtable->value + sum[i];
+#else
     part[i] = htp->hashtable->tuple + sum[i];
+#endif
   }
   sum[partitions] = total_tuples;
 
   for(list<partition_t*>::iterator it = parts.begin();
       it != parts.end(); ++it ) {
+#ifdef COLUMN_WISE
+	intkey_t * key = (*it)->key;
+	value_t * value = (*it)->value;
+#else
     tuple_t * tuple = (*it)->tuple;
+#endif
     for (uint64_t i = 0; i < (*it)->tuples; ++i) {
+#ifdef COLUMN_WISE
+      uint32_t hash = mhash(key[i], mask, shift);
+      *(part_key[hash]++) = key[i];
+      *(part_value[hash]++) = value[i];
+#else
       uint32_t hash = mhash(tuple[i].key, mask, shift);
       *(part[hash]++) = tuple[i];
+#endif
     }
   }
 
-
-
-  /*
-  // validate
-  long long sum = 0;
-  for(list<partition_t*>::iterator it = parts.begin();
-  it != parts.end(); ++it ) {
-  tuple_t * tuple = (*it)->tuple;
-  size_t tuples = (*it)->tuples;
-  for (uint64_t i = 0; i != tuples ; ++i) {
-  sum += tuple[i].key;
-  }
-  }
-  long long sum1 = 0;
-  tuple_t * tuple = outp->tuple;
-  for (uint32_t i = 0 ; i != partitions ; ++i) {
-  assert(part_end[i] == part_start[i] + hist[i]);
-  for (uint32_t j = part_start[i]; j != part_end[i]; ++j) {
-  assert(mhash(tuple[j].key, mask, shift) == i);
-  sum1 += tuple[j].key;
-  }
-  }
-  assert(sum == sum1);
-  */
   return htp;
 }
 
@@ -177,15 +186,56 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
 
   partition_t *outbuf = my->buffer->partition[0];
 
+#ifdef COLUMN_WISE
+  intkey_t * skey = input_->key;
+  intkey_t * rkey = hashtable->key;
+  value_t * svalue = input_->value;
+  value_t * rvalue = hashtable->value;
+#else
   tuple_t * stuple = input_->tuple;
   tuple_t * rtuple = hashtable->tuple;
+#endif
   uint32_t * sum = hashtable->sum;
 
   //  long matches = 0;
   // start from what is remaining
+#ifdef COLUMN_WISE
+  intkey_t * key_out = outbuf->key + outbuf->tuples;
+  intkey_t * key_end = outbuf->key + outbuf->capacity;
+  value_t * value_out = outbuf->value + outbuf->tuples;
+  //  value_t * value_end = outbuf->value + outbuf->capacity;
+#else
   tuple_t * output = outbuf->tuple + outbuf->tuples;
-  tuple_t * outend = outbuf->tuple + Params::kMaxTuples;
+  tuple_t * outend = outbuf->tuple + outbuf->capacity;
+#endif
   for (uint64_t i = 0; i != input_->tuples; ++i) {
+#ifdef COLUMN_WISE
+	uint32_t idx = mhash(skey[i], mask, shift);
+    uint64_t j = sum[idx], end = sum[idx+1];
+    for (; j != end; ++j) {
+
+	  if (skey[i] == rkey[i]) {
+        *(key_out++) = svalue[i];
+        *(value_out++) = rvalue[i];
+        if (key_out == key_end) {
+          outbuf->tuples = outbuf->capacity;
+          FlushBuffer(my->buffer->table, outbuf, my->env);
+          
+          outbuf = memm->GetPartition();
+          outbuf->radix = input_->radix;
+		  
+          key_out = outbuf->key;
+          key_end = outbuf->key + outbuf->capacity;;
+          value_out = outbuf->value;
+		  //          value_end = outbuf->value + outbuf->capacity;;
+          my->buffer->partition[0] = outbuf;
+        }
+      }
+    }
+  }
+  // set buffer size
+  outbuf->tuples = key_out - outbuf->key;
+#else
     uint32_t idx = mhash(stuple[i].key, mask, shift);
     uint64_t j = sum[idx], end = sum[idx+1];
     for (; j != end; ++j) {
@@ -194,23 +244,23 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
         output->payload = (intkey_t)rtuple[i].payload;
         output++;
         if (output == outend) {
-          outbuf->tuples = Params::kMaxTuples;
+          outbuf->tuples = outbuf->capacity;
           FlushBuffer(my->buffer->table, outbuf, my->env);
           
           outbuf = memm->GetPartition();
           outbuf->radix = input_->radix;
           output = outbuf->tuple;
-          outend = outbuf->tuple + Params::kMaxTuples;
+          outend = outbuf->tuple + outbuf->capacity;
           my->buffer->partition[0] = outbuf;
         }
         //        matches++;
       }
     }
   }
-
   // set buffer size
   outbuf->tuples = output - outbuf->tuple;
  //  outbuf->tuples = matches;
+#endif
 }
 
 

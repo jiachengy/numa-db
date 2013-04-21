@@ -24,8 +24,13 @@ struct partition_t {
   int radix; // partition key
 
   size_t capacity;
-  
+
+#ifdef COLUMN_WISE
+  intkey_t * key;
+  value_t * value;
+#else  
   tuple_t * tuple;
+#endif
   size_t tuples;
   uint64_t offset;
   hashtable_t * hashtable;
@@ -100,34 +105,6 @@ class Table {
   void set_done() { done_ = true; }
   uint32_t done_count() { return done_count_; }
   uint32_t nparts() { return nparts_; }
-
-  long long Validate(int mask, int shift) {
-    long long sum = 0;
-    for (uint32_t node = 0; node < nnodes_; ++node) {
-      list<partition_t*> &ps = GetPartitionsByNode(node);
-      size_t size = 0;
-      for (list<partition_t*>::iterator it = ps.begin();
-           it != ps.end(); ++it) {
-        size += (*it)->tuples;
-        tuple_t *tuple = (*it)->tuple;
-        for (uint32_t i = 0; i < (*it)->tuples; i++) {
-          sum += tuple[i].key;
-        }
-      }
-    }
-
-    for (uint32_t key = 0; key < nkeys_; ++key) {
-      list<partition_t*> &pk = GetPartitionsByKey(key);
-      for (list<partition_t*>::iterator it = pk.begin();
-           it != pk.end(); ++it) {
-        tuple_t *tuple = (*it)->tuple;
-        for (uint32_t i = 0; i < (*it)->tuples; i++)
-          assert(tuple[i].key % nkeys_ == key);
-      }
-    }
-
-    return sum;
-  }
 
   static Table* BuildTableFromRelation(relation_t *rel);
 };

@@ -6,13 +6,11 @@ typedef struct hashtable_t hashtable_t;
 #include "types.h"
 #include "table.h"
 
+#ifdef BUCKET_CHAINING
 struct entry_t {
   tuple_t tuple;
   int next;
 };
-
-
-#ifdef BUCKET_CHAINING
 struct hashtable_t {
   entry_t *next;
   int *bucket;
@@ -21,7 +19,12 @@ struct hashtable_t {
 };
 #else
 struct hashtable_t {
+#ifdef COLUMN_WISE
+  intkey_t * key;
+  value_t * value;
+#else
   tuple_t * tuple;
+#endif
   size_t tuples;
   uint32_t * sum;
   size_t partitions;

@@ -17,8 +17,8 @@ int main(int argc, char *argv[])
 #ifdef USE_PERF
   perf_lib_init(NULL, NULL);
 #endif
-  size_t rsize = 1024L * 1024L * 1024L;
-  size_t ssize = 1024L * 1024L * 1024L;
+  size_t rsize = 1024L * 1024L;
+  size_t ssize = 1024L * 1024L;
 
   int nodes = 1;
   int nthreads = 1;

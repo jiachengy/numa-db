@@ -28,8 +28,6 @@ class PartitionTask : public Task
 
   void Finish(thread_t *my);
   void DoPartition(thread_t *my);
-  void DoPartitionRemote(thread_t *my);
-  
  public:
  PartitionTask(partition_t *input, int shift, int bits) : Task(OpPartition) {
     pass_ = (shift==0) ? 1 : 2;

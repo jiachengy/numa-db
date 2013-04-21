@@ -125,12 +125,22 @@ init_thread_mem(void *params)
 
   thread_t *args = (thread_t*)params;
   cpu_bind(args->cpu);
+#ifdef COLUMN_WISE
+  args->wc_buf_key = (cache_line_t*)alloc_aligned(Params::kFanoutPass2 * sizeof(cache_line_t), CACHE_LINE_SIZE);
+  args->wc_part_key = (intkey_t**)malloc(Params::kFanoutPass2 * sizeof(intkey_t*));
+  args->wc_buf_value = (cache_line_t*)alloc_aligned(Params::kFanoutPass2 * sizeof(cache_line_t), CACHE_LINE_SIZE);
+  args->wc_part_value = (value_t**)malloc(Params::kFanoutPass2 * sizeof(value_t*));
+  args->part_key = (intkey_t**)malloc(partitions * sizeof(intkey_t*));
+  args->part_value = (value_t**)malloc(partitions * sizeof(value_t*));
+#else
   args->wc_buf = (cache_line_t*)alloc_aligned(Params::kFanoutPass2 * sizeof(cache_line_t), CACHE_LINE_SIZE);
-  args->wc_count = (uint32_t*)malloc(Params::kFanoutPass2 * sizeof(uint32_t));
   args->wc_part = (tuple_t**)malloc(Params::kFanoutPass2 * sizeof(tuple_t*));
-
-  args->hist = (uint32_t*)malloc(partitions * sizeof(uint32_t));
   args->part = (tuple_t**)malloc(partitions * sizeof(tuple_t*));
+#endif
+
+  args->wc_count = (uint32_t*)malloc(Params::kFanoutPass2 * sizeof(uint32_t));
+  args->hist = (uint32_t*)malloc(partitions * sizeof(uint32_t));
+
 
   args->memm[0] = new Memory(args->node_id, gConfig.mem_per_thread,
                              Params::kMaxTuples, 0);
