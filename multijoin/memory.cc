@@ -88,6 +88,8 @@ Memory::GetPartition()
 {
   pthread_mutex_lock(&mutex_);
 
+  if (freelist_.empty())
+    logging("unit size: %d\n", unit_size_);
   assert(!freelist_.empty());
 
   partition_t *p = freelist_.front();

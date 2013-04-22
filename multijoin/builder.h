@@ -34,6 +34,7 @@ relation_t * build_relation_pk_onnode(size_t ntuples, uint32_t node);
 relation_t* parallel_build_relation_pk(size_t ntuples, uint32_t nnodes, uint32_t nthreads);
 relation_t *parallel_build_relation_fk(const size_t ntuples, const int32_t minid, const int32_t maxid, const uint32_t nnodes, const uint32_t nthreads);
 
+relation_t * build_zipf(size_t tuples, uint8_t nodes);
 
 relation_t *
 build_scalar_skew(const size_t ntuples, const int32_t maxid,
@@ -43,7 +44,7 @@ build_scalar_skew(const size_t ntuples, const int32_t maxid,
 
 // Tuple placement skew
 relation_t *
-build_placement_skew(const size_t ntuples, const int32_t maxid,
+build_placement_skew(const size_t ntuples, const int32_t minid, const int32_t maxid,
                      const uint32_t nnodes, const uint32_t nthreads, int q);
 
 

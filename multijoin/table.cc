@@ -102,16 +102,19 @@ void Table::AddPartition(partition_t *p)
   pthread_mutex_unlock(&mutex_);
 }
 
-void Table::Commit(int size)
+bool Table::Commit(int size)
 {
   pthread_mutex_lock(&mutex_);
-
+  bool done = false;
   done_count_ += size;
 
-  if (done_count_ == nparts_)
+  if (ready_ && done_count_ == nparts_) {
     set_done();
-
+    done = true;
+  }
   pthread_mutex_unlock(&mutex_);
+
+  return done;
 }
 
 Table*

@@ -16,14 +16,7 @@ void FlushBuffer(Table * table, partition_t *p, Environment *env)
     P2Task *p2task = p2tasks[p->node][p->radix];
     p2task->AddSubTask(newtask);
 
-    // add the task to queue only if the size reaches a threshold
-    // to solve the problem of busy polling and buffer flushing
-
-    // or we automatically add all when the partition finishes
-    // if there is not enough data
-
-    // Expected size * 0.75
-    if (!p2task->scheduled() && p2task->size() >= Params::kFanoutPass2 * 0.75) {
+    if (!p2task->scheduled() && p2task->size() >= Params::kScheduleThreshold) {
       env->nodes()[p->node].queue->AddTask(table->id(), p2task);
       p2task->set_schedule(true);
     }
@@ -31,10 +24,126 @@ void FlushBuffer(Table * table, partition_t *p, Environment *env)
   else if (table->type() == OpProbe) {
     UnitProbeTask *newtask = new UnitProbeTask(p);
     ProbeTask **probetasks = env->GetProbeTaskByTable(table->id());
-    probetasks[p->radix]->AddSubTask(newtask);
+    ProbeTask *probe = probetasks[p->radix];
+    probe->AddSubTask(newtask);
   }
 }
 
+
+
+#ifdef NAIVE
+void
+PartitionTask::DoPartition(thread_t *my)
+{
+  int shift = shift_;
+  int fanout = fanout_;
+  int mask = mask_;
+
+  Memory * memm = my->memm[pass_-1];
+#ifdef COLUMN_WISE
+  intkey_t * key_out = memm->keybase();
+  value_t * value_out = memm->valbase();
+#else
+  tuple_t *output = memm->baseptr();
+#endif
+
+  size_t block_size = memm->unit_size();
+
+  // check buffer compatibility
+  pthread_mutex_lock(&my->lock);
+  if (!buffer_compatible(my->buffer, out_, input_->radix)) {
+    // flush old buffers
+    if (my->buffer) {
+      partition_t **buffer = my->buffer->partition;
+      for (int i = 0; i != my->buffer->partitions; ++i)
+        if (buffer[i]->tuples != 0)
+          FlushBuffer(my->buffer->table, buffer[i], my->env);
+      buffer_destroy(my->buffer);
+    }
+    my->buffer = buffer_init(out_, input_->radix, fanout);
+  }
+  pthread_mutex_unlock(&my->lock);
+
+  partition_t **buffer = my->buffer->partition;
+
+  // initialize the output with initial buffer
+  for (int i = 0; i != fanout; ++i) {
+    // leave enough room for alignment
+    if (buffer[i] == NULL) {
+      buffer[i] = memm->GetPartition();
+      buffer[i]->radix = encode_radix(input_->radix, i, shift);
+    }
+  }
+#ifdef COLUMN_WISE
+  intkey_t * key_ptr = input_->key;
+  //  value_t * value_end = &input_->value[input_->tuples];
+  value_t * value_ptr = input_->value;
+#else
+  tuple_t *tuple_ptr = input_->tuple;
+#endif
+
+
+#ifdef COLUMN_WISE
+  intkey_t ** part_key = my->wc_part_key;
+  value_t ** part_value = my->wc_part_value;
+#else
+  tuple_t **part = my->wc_part;
+#endif
+
+  for (int i = 0; i != fanout; ++i) {
+#ifdef COLUMN_WISE
+	part_key[i] = &buffer[i]->key[buffer[i]->tuples];
+	part_value[i] = &buffer[i]->value[buffer[i]->tuples];
+#else
+    part[i] = &buffer[i]->tuple[buffer[i]->tuples];
+#endif
+  }
+
+  for (uint64_t i = 0; i != input_->tuples; ++i) {
+#ifdef COLUMN_WISE
+    intkey_t key = key_ptr[i];
+	value_t value = value_ptr[i];
+    uint32_t hash = mhash(key, mask, shift);
+    
+    *(part_key[hash]++) = key;
+    *(part_value[hash]++) = value;
+
+    if (part_key[hash] == buffer[hash]->key + block_size) { // block is full
+        buffer[hash]->tuples = block_size;
+        FlushBuffer(my->buffer->table, buffer[hash], my->env);
+        // create new buffer
+        
+        buffer[hash] = memm->GetPartition();
+        buffer[hash]->radix = encode_radix(input_->radix, hash, shift);
+        part_key[hash] = buffer[hash]->key;
+        part_value[hash] = buffer[hash]->value;
+    }
+#else
+    tuple_t row = tuple_ptr[i];
+    uint32_t hash = mhash(row.key, mask, shift);
+    *(part[hash]++) = row;
+    if (part[hash] == buffer[hash] + block_size) { // block is full
+        buffer[hash]->tuples = block_size;
+        FlushBuffer(my->buffer->table, buffer[hash], my->env);
+        // create new buffer
+        
+        buffer[hash] = memm->GetPartition();
+        buffer[hash]->radix = encode_radix(input_->radix, hash, shift);
+        part[hash] = buffer[hash]->tuple;
+    }
+#endif
+
+  }
+  for (int i = 0 ; i != fanout ; ++i) {
+#ifdef COLUMN_WISE
+    buffer[i]->tuples = (part_key[i] - buffer[i]->key); // set the new size
+#else    
+    buffer[i]->tuples = (part[i] - buffer[i]->tuple); // set the new size
+#endif
+  }
+
+}
+#else
 void
 PartitionTask::DoPartition(thread_t *my)
 {
@@ -250,18 +359,17 @@ PartitionTask::DoPartition(thread_t *my)
   }
 #endif
 }
+#endif
 
 void PartitionTask::Finish(thread_t* my)
 {
   //  my->memm->Recycle(part_);
 
-  //  if (part_->memm)
-  //    part_->memm->Recycle(part_);
-  
-  in_->Commit();
-
-  // check if I am the last one to finish?
-  if (!in_->done())
+  if (input_->memm)
+    input_->memm->Recycle(input_);
+ 
+  // commit and check if I am the last one to finish? 
+  if (!in_->Commit())
     return;
 
   // force flush
@@ -293,46 +401,42 @@ void PartitionTask::Finish(thread_t* my)
     if (my->env->queries() == 0)
       my->env->set_done();
     return;
-  // case OpPartition:
-  //   return;
-  // case OpPartition2:
-  //   {
-  //     node_t *nodes = my->env->nodes();
-  //     for (int node = 0; node != my->env->nnodes(); ++node) {
-  //       nodes[node].queue->Unblock(out_->id());
-  //     }
-  //   }
-  //   break;
-  // case OpBuild: //  Unblock build
-  //   {
-  //     node_t *nodes = my->env->nodes();
-  //     for (int node = 0; node < my->env->nnodes(); ++node)
-  //       nodes[node].queue->Unblock(out_->id());
-  //   }
-  //   break;
-  // case OpProbe: // unblock probing queues
-  //   {
-  //     node_t *nodes = my->env->nodes();
-  //     for (int node = 0; node < my->env->nnodes(); ++node)
-  //       nodes[node].queue->Unblock(out_->id());
-  //   }
-  //   break;
-  default:
-    break;
-  }
-
-  // activate all tasks that have not been scheduled yet
-  if (out_->type() == OpPartition2) {
-    P2Task ***p2tasks = my->env->GetP2TaskByTable(out_->id());
-    for (int radix = 0; radix != Params::kFanoutPass1; ++radix) {
-      for (int node = 0; node != my->env->nnodes(); ++node) {
-        P2Task *p2task = p2tasks[node][radix];
-        if (!p2task->scheduled()) {
-          my->env->nodes()[node].queue->AddTask(out_->id(), p2task);
-          p2task->set_schedule(true);
+  case OpPartition:
+    return;
+  case OpPartition2:
+    {
+      P2Task ***p2tasks = my->env->GetP2TaskByTable(out_->id());
+      for (int radix = 0; radix != Params::kFanoutPass1; ++radix) {
+        for (int node = 0; node != my->env->nnodes(); ++node) {
+          P2Task *p2task = p2tasks[node][radix];
+          if (!p2task->scheduled()) {
+            my->env->nodes()[node].queue->AddTask(out_->id(), p2task);
+            p2task->set_schedule(true);
+          }
         }
       }
+      // node_t *nodes = my->env->nodes();
+      // for (int node = 0; node != my->env->nnodes(); ++node) {
+      //   nodes[node].queue->Unblock(out_->id());
+      // }
     }
+    break;
+  case OpBuild: //  Unblock build
+    {
+      // node_t *nodes = my->env->nodes();
+      // for (int node = 0; node < my->env->nnodes(); ++node)
+      //   nodes[node].queue->Unblock(out_->id());
+    }
+    break;
+  case OpProbe: // unblock probing queues
+    {
+      // node_t *nodes = my->env->nodes();
+      // for (int node = 0; node < my->env->nnodes(); ++node)
+      //   nodes[node].queue->Unblock(out_->id());
+    }
+    break;
+  default:
+    break;
   }
 
   node_t *nodes = my->env->nodes();

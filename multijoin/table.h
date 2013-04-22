@@ -87,7 +87,7 @@ class Table {
   ~Table();
 
   void AddPartition(partition_t *p);
-  void Commit(int size = 1);
+  bool Commit(int size = 1);
 
   list<partition_t*>& GetPartitionsByNode(int node) {return pnodes_[node];}
   list<partition_t*>& GetPartitionsByKey(int key) { return pkeys_[key]; }

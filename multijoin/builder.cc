@@ -588,7 +588,7 @@ build_scalar_skew(const size_t ntuples, const int32_t maxid,
 
 /* node 0 has q times more tuples than other nodes */
 relation_t *
-build_placement_skew(const size_t ntuples, const int32_t maxid,
+build_placement_skew(const size_t ntuples, const int32_t minid, const int32_t maxid,
                      const uint32_t nnodes, const uint32_t nthreads,
                      int q)
 {
@@ -625,7 +625,7 @@ build_placement_skew(const size_t ntuples, const int32_t maxid,
       args[tid].cpu = cpu_of_node(node, t);
       args[tid].node = node;
       args[tid].offset = offset;
-      args[tid].minid = 1;
+      args[tid].minid = minid;
       args[tid].maxid = maxid;
       args[tid].ntuples = (t == nthreads_on_node - 1) ? ntuples_lastthread : ntuples_per_thread;
       
@@ -647,4 +647,23 @@ build_placement_skew(const size_t ntuples, const int32_t maxid,
     pthread_barrier_destroy(&barriers[node]);
 
   return rel;
+}
+
+
+relation_t * build_zipf(size_t tuples, uint8_t nodes, double theta)
+{
+
+  uint64_t *data[nodes], size[nodes];
+
+  for (int i = 0; i != nodes; ++i) {
+    size[i] = tuples / nodes;
+    data[i] = NULL;
+  }
+
+  uint64_t bits[65];
+  
+  zipf(data, size, numa, theta, 1, bits);
+
+  // copy data 
+
 }

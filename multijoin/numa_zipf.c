@@ -13,51 +13,7 @@
 #include <math.h>
 #include <numa.h>
 
-static uint64_t micro_time(void)
-{
-	struct timeval t;
-	struct timezone z;
-	gettimeofday(&t, &z);
-	return t.tv_sec * 1000000 + t.tv_usec;
-}
-
-static int cpus(void)
-{
-	char cpu_name[40];
-	struct stat st;
-	strcpy(cpu_name, "/sys/devices/system/cpu/cpu");
-	char *cpu_num_ptr = &cpu_name[strlen(cpu_name)];
-	int cpu_num = -1;
-	do {
-		sprintf(cpu_num_ptr, "%d", ++cpu_num);
-	} while (stat(cpu_name, &st) == 0);
-	return cpu_num;
-}
-
-static void cpu_bind(int cpu_id)
-{
-	cpu_set_t cpu_set;
-	CPU_ZERO(&cpu_set);
-	CPU_SET(cpu_id, &cpu_set);
-	pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpu_set);
-}
-
-static void memory_bind(int cpu_id)
-{
-	char numa_id_str[12];
-	struct bitmask *numa_node;
-	int numa_id = numa_node_of_cpu(cpu_id);
-	sprintf(numa_id_str, "%d", numa_id);
-	numa_node = numa_parse_nodestring(numa_id_str);
-	numa_set_membind(numa_node);
-	numa_free_nodemask(numa_node);
-}
-
-static void *mamalloc(size_t size)
-{
-	void *ptr = NULL;
-	return posix_memalign(&ptr, 64, size) ? NULL : ptr;
-}
+#include "util.h"
 
 static void schedule_threads(int *cpu, int *numa_node, int threads, int numa)
 {
@@ -128,13 +84,13 @@ static void *zipf_thread(void *arg)
 			numa_local_id++;
 	// bind thread and its allocation
 	cpu_bind(d->cpu[id]);
-	memory_bind(d->cpu[id]);
+	cpu_membind(d->cpu[id]);
 	// allocate space
 	uint64_t p, numa_size = d->size[numa_node];
 	uint64_t total_size = d->total_size;
 	// allocate space for data
 	if (!numa_local_id && d->data[numa_node] == NULL)
-      d->data[numa_node] = (uint64_t*)mamalloc(numa_size * sizeof(uint64_t));
+      d->data[numa_node] = (uint64_t*)alloc(numa_size * sizeof(uint64_t));
 	// offsets of probability array
 	uint64_t size = d->total_size / threads;
 	uint64_t offset = size * id;

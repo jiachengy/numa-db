@@ -12,6 +12,45 @@ inline size_t get_hist_size(size_t tuples)
   return tuples;
 }
 
+#ifdef LINEAR_PROBING
+// NOT IMPLEMENTED
+partition_t* BuildTask::Build(thread_t *my)
+{
+  list<partition_t*> &parts = in_->GetPartitionsByKey(radix_);
+
+  size_t tuples = 0;
+  for(list<partition_t*>::iterator it = parts.begin();
+      it != parts.end(); ++it )
+    tuples += (*it)->tuples;
+
+  uint8_t bits = log_2(tuples / Params::kLoadFactor);
+  size_t buckets = pow_2(bits); // NEXT_POW_2(tuples / Params::kLoadFactor)
+  int shift = Params::kNumRadixBits;
+  int32_t mask  = (buckets - 1) << shift;
+
+  partition_t *htp = my->memm[2]->GetHashtable(buckets);
+  htp->radix = radix_;
+
+  tuple_t * bucket = htp->hashtable->tuple;
+
+  for(list<partition_t*>::iterator it = parts.begin();
+      it != parts.end(); ++it ) {
+	intkey_t * key = (*it)->key;
+	value_t * value = (*it)->value;
+    for (uint64_t i = 0; i < (*it)->tuples; ++i) {
+      uint32_t hash = mhash(key, mask, shift);
+      for (uint64_t j = hash; j != buckets; ++j) {
+        if (bucket[j] == 0) { // invalid key
+          bucket[j].key = key[i];
+          bucket[j].payload = value[i];
+          break;
+        }
+      }
+    }
+  }
+  return htp;
+}
+#else
 partition_t * BuildTask::Build(thread_t * my)
 {
   list<partition_t*> &parts = in_->GetPartitionsByKey(radix_);
@@ -80,13 +119,15 @@ partition_t * BuildTask::Build(thread_t * my)
 
   for(list<partition_t*>::iterator it = parts.begin();
       it != parts.end(); ++it ) {
+    partition_t * p = *it;
+
 #ifdef COLUMN_WISE
-	intkey_t * key = (*it)->key;
-	value_t * value = (*it)->value;
+	intkey_t * key = p->key;
+	value_t * value = p->value;
 #else
-    tuple_t * tuple = (*it)->tuple;
+    tuple_t * tuple = p->tuple;
 #endif
-    for (uint64_t i = 0; i < (*it)->tuples; ++i) {
+    for (uint64_t i = 0; i != p->tuples; ++i) {
 #ifdef COLUMN_WISE
       uint32_t hash = mhash(key[i], mask, shift);
       *(part_key[hash]++) = key[i];
@@ -96,11 +137,14 @@ partition_t * BuildTask::Build(thread_t * my)
       *(part[hash]++) = tuple[i];
 #endif
     }
+
+    if (p->memm)
+      p->memm->Recycle(p);
   }
 
   return htp;
 }
-
+#endif
 
 void BuildTask::Run(thread_t *my)
 {
@@ -122,20 +166,18 @@ void BuildTask::Finish(thread_t* my, partition_t *htp)
   // hash table partition
   out_->AddPartition(htp);
 
-  // Commit
-  in_->Commit(in_->GetPartitionsByKey(radix_).size());
-
   // We create a new probe task on this node
   Taskqueue *queue = my->node->queue;
   ProbeTask **probetask = my->env->GetProbeTaskByTable(probe_->id());
   queue->AddTask(probe_->id(), probetask[radix_]);
+  probetask[radix_]->set_schedule(true);
 
   node_t *nodes = my->env->nodes();
   for (int node = 0; node < my->env->nnodes(); ++node)
     nodes[node].queue->UnblockNext(in_->id());
 
-  // check if I am the last one to finish?
-  if (!in_->done())
+  // commit and check if I am the last one to finish?
+  if (!in_->Commit(in_->GetPartitionsByKey(radix_).size()))
     return;
 
   // set the output hashtable table to ready
@@ -148,12 +190,6 @@ void BuildTask::Finish(thread_t* my, partition_t *htp)
     my->env->set_done();
 }
 
-#ifdef BUCKET_CHAINING
-// NOT IMPLEMENTED
-hashtable_t* BuildTask::Build(thread_t *my)
-{
-}
-#endif
 
 void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
 {
@@ -163,9 +199,9 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
 
   Memory * memm = my->memm[1]; // use the smaller partition size
 
+  pthread_mutex_lock(&my->lock);
   // check buffer compatibility
   if (!buffer_compatible(my->buffer, out_, input_->radix)) {
-    pthread_mutex_lock(&my->lock);
     // flush old buffers
     if (my->buffer) {
       partition_t **buffer = my->buffer->partition;
@@ -176,8 +212,8 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
     }
     // we only need one buffer
     my->buffer = buffer_init(out_, input_->radix, 1);
-    pthread_mutex_unlock(&my->lock);
   }
+  pthread_mutex_unlock(&my->lock);
 
   if (my->buffer->partition[0] == NULL) {
     my->buffer->partition[0] = memm->GetPartition();
@@ -214,7 +250,7 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
     uint64_t j = sum[idx], end = sum[idx+1];
     for (; j != end; ++j) {
 
-	  if (skey[i] == rkey[i]) {
+	  if (skey[i] == rkey[j]) {
         *(key_out++) = svalue[i];
         *(value_out++) = rvalue[i];
         if (key_out == key_end) {
@@ -290,10 +326,8 @@ void UnitProbeTask::Finish(thread_t* my)
   if (input_->memm)
     input_->memm->Recycle(input_);
   
-  in_->Commit();
-
   // check if I am the last one to finish?
-  if (!in_->done())
+  if (!in_->Commit())
     return;
 
   // Flush buffers

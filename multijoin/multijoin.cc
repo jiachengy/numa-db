@@ -99,7 +99,7 @@ void* work_thread(void *param)
 
 #endif
 
-  //  int putbacks = 0;
+  int putbacks = 0;
   int cpu = my->cpu;
   cpu_bind(cpu);
 
@@ -131,9 +131,12 @@ void* work_thread(void *param)
       }
       // case 3: local tasks are not ready yet
       else { 
-        //        ++putbacks;
-        //        queue->Putback(my->batch_task->id(), my->batch_task);
-        my->batch_task->set_schedule(false);
+        if (my->batch_task->type() == OpProbe) {
+          ++putbacks;
+          queue->Putback(my->batch_task->id(), my->batch_task);
+        }
+        else
+          my->batch_task->set_schedule(false);
         my->batch_task = NULL;
         my->localtasks = NULL;
       }
@@ -182,7 +185,7 @@ void* work_thread(void *param)
     }
   }
 
-  //  logging("Putbacks: %d\n", putbacks);
+  logging("Putbacks: %d\n", putbacks);
   logging("Remaining memory[0]: %d MB\n",
           my->memm[0]->available() / (1024 * 1024));
 

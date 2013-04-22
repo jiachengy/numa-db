@@ -124,6 +124,8 @@ class ProbeTask : public Task
     subtasks_->AddTaskAtomic((Task*)task);
   }
 
+  size_t size() { return subtasks_->size(); }
+
 };
 
 
