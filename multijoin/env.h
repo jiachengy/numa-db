@@ -19,12 +19,17 @@ class ProbeTask;
 struct buffer_t {
   Table * table; // get p2tasks by table
   int radix;
+  int shift;
 
   partition_t **partition;
   int partitions;
+
+  size_t tuples;
+  //  BlockList *localblocks;
+  vector<partition_t*> *localblocks;
 };
 
-buffer_t* buffer_init(Table *table, int key, int partitions);
+buffer_t* buffer_init(Table *table, int radix, int shift, int partitions);
 void buffer_destroy(buffer_t *buffer);
 bool buffer_compatible(buffer_t *buffer, Table *table, int radix);
 
@@ -91,6 +96,8 @@ struct thread_t {
   perf_t *perf; 
   perf_counter_t *stage_counter;
   perf_counter_t total_counter;
+
+
 };
 
 using namespace std;
@@ -130,6 +137,8 @@ class Environment
   int queries_;
   bool done_;
 
+  pthread_barrier_t barrier_;
+
  public:
   Environment(uint32_t nnodes, uint32_t nthreads);
   ~Environment();
@@ -162,6 +171,10 @@ class Environment
 
   void AddTable(Table *table) {
     tables_.push_back(table);
+  }
+
+  void SyncBarrier() {
+    pthread_barrier_wait(&barrier_);
   }
 
   void AddP2Tasks(P2Task *** p2tasks, uint32_t table_id) {

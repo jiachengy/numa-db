@@ -46,21 +46,21 @@ int main(int argc, char *argv[])
   //  logging("run with scalar skew: %d, %d\n", scalar_skew_r, scalar_skew_s);
 
   //  relation_t *relR = parallel_build_relation_fk(rsize, 2, rsize, nodes, nthreads);
-  //relation_t * relR = build_placement_skew(rsize, 2, rsize, nodes, nthreads, tps_skew);
-  relation_t * relR = build_scalar_skew(rsize, rsize, nodes, nthreads, 1);
+  //  relation_t * relR = build_placement_skew(rsize, 2, rsize, nodes, nthreads, tps_skew);
+  relation_t * relR = build_scalar_skew(rsize, rsize, nodes, nthreads, scalar_skew_r);
   logging("Building R table with %ld tuples done.\n", rsize);
 
   // relation_t * relS = parallel_build_relation_pk(ssize, nodes, nthreads);
-  relation_t * relS = build_scalar_skew(ssize, ssize, nodes, nthreads, scalar_skew_r);
-  //relation_t *relS = parallel_build_relation_fk(ssize, 2, rsize, nodes, nthreads);
+  relation_t * relS = build_scalar_skew(ssize, ssize, nodes, nthreads, 1);
+  //  relation_t *relS = parallel_build_relation_fk(ssize, 2, rsize, nodes, nthreads);
   //  relation_t * relS = build_placement_skew(ssize, 2, ssize, nodes, nthreads, tps_skew);
-   logging("Building S table with %ld tuples done.\n", ssize);
+  logging("Building S table with %ld tuples done.\n", ssize);
    
   // gConfig.large_mem_per_thread = rsize / nthreads * 2;
-  // gConfig.small_mem_per_thread = 0;
+  // gConfig.small_mem_per_thread = rsize / nthreads * 4;
   // gConfig.hashtable_per_thread = 0;
 
-  gConfig.large_mem_per_thread = (rsize+ssize) / nthreads * 3.5;
+  gConfig.large_mem_per_thread = (rsize+ssize) / nthreads * 4;
   gConfig.small_mem_per_thread = (rsize+ssize) / nthreads * 5;
   gConfig.hashtable_per_thread = 1024 * 1024 * 1024 / nthreads * 2;
 

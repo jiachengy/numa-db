@@ -153,7 +153,7 @@ inline uint32_t mhash(uint32_t key, uint32_t mask, int shift)
   return (key & mask) >> shift;
 }
 
-void FlushBuffer(Table * table, partition_t *p, Environment *env);
-
+void FlushBuffer(buffer_t *buffer, partition_t *p, Environment *env);
+void FlushEntireBuffer(buffer_t *buffer, int node, Environment *env);
 
 #endif // HASHJOIN_H_

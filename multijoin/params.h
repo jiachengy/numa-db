@@ -25,7 +25,7 @@ class Params
  public:
   //  static size_t kMaxHtTuples;
   static const size_t kPartitionSize = 1024 * 1024; // 1M
-  static const size_t kSmallPartitionSize = 1024 * 64; // 256K: L2 size
+  static const size_t kSmallPartitionSize = 64 * 1024; // 256K: L2 size
 
 
 

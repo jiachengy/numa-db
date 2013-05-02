@@ -43,11 +43,116 @@ struct partition_t {
 
   Memory *memm;
 };
-// __attribute__((aligned(CACHE_LINE_SIZE)));
+
+typedef vector<vector<partition_t*> > block_grid_t;
+
+class BlockIterator
+{
+ private:
+  block_grid_t &grid_;
+  int current_radix_;
+  int current_pos_;
+
+ public:
+ BlockIterator(block_grid_t &grid) :grid_(grid) {
+    current_radix_ = 0;
+    current_pos_ = 0;
+  }
+
+  partition_t* getNext() {
+    partition_t * next = grid_[current_radix_][current_pos_];
+    ++current_pos_;
+    return next;
+  }
+
+  bool hasNext() {
+    if (current_radix_ == grid_.size())
+      return false;
+    if (current_pos_ < grid_[current_radix_].size())
+      return true;
+    
+    while (++current_radix_ != grid_.size()) {
+      if (!grid_[current_radix_].empty()) {
+        current_pos_ = 0;
+        return true;
+      }      
+    }
+
+    return false;
+  }
+};
+
+class BlockList
+{
+ private:
+  block_grid_t grid_;
+  int blocks_;
+  size_t tuples_;
+
+ public:
+ BlockList(int partitions) : 
+  blocks_(0), tuples_(0) {
+    grid_.resize(partitions);
+  }
+
+  BlockIterator iterator() {
+    return BlockIterator(grid_);
+  }
+
+  int blocks() { return blocks_; }
+
+  size_t tuples() { return tuples_; }
+  
+  void AddBlock(partition_t* p) { 
+    grid_[p->radix].push_back(p); 
+    ++blocks_;
+    tuples_ += p->tuples;
+  }
+
+  vector<partition_t*>& operator[] (const int index) { return grid_[index]; }
+};
+
+
+class BlockKeyIterator
+{
+ private:
+  vector<BlockList> &blocks_;
+  int key_;
+  int current_node_;
+  int current_pos_;
+
+ public:
+ BlockKeyIterator(vector<BlockList> &blocks, int key) :blocks_(blocks), key_(key) {
+    current_node_ = 0;
+    current_pos_ = 0;
+  }
+
+  partition_t* getNext() {
+    partition_t * next = blocks_[current_node_][key_][current_pos_];
+    ++current_pos_;
+    return next;
+  }
+
+  bool hasNext() {
+    if (current_node_ == blocks_.size())
+      return false;
+    if (current_pos_ < blocks_[current_node_][key_].size())
+      return true;
+    
+    while (++current_node_ != blocks_.size()) {
+      if (!blocks_[current_node_][key_].empty()) {
+        current_pos_ = 0;
+        return true;
+      }      
+    }
+    return false;
+  }
+};
 
 partition_t* partition_init(int node);
 void partition_destroy(partition_t * partition);
 void partition_reset(partition_t * partition);
+
 
 class Table {
  private:
@@ -56,11 +161,13 @@ class Table {
 
   const int id_;
   OpType type_;
-	
-  std::vector<std::list<partition_t*> > pnodes_;
+  
+  vector<BlockList> blocks_;
+
+  //  block_grid_t *pnodes_;
   uint32_t nnodes_;
 
-  vector<list<partition_t*> > pkeys_;
+  //  vector<vector<partition_t*> > pkeys_;
   uint32_t nkeys_;
 	
   bool ready_;
@@ -70,27 +177,30 @@ class Table {
   uint32_t nparts_;
   uint32_t done_count_;
 
-  // output buffer
-  //  size_t nbuffers_; 
-  //  vector<vector<partition_t* > > buffers_;
-
   // locking
-  pthread_mutex_t mutex_;
+  pthread_mutex_t *mutex_; // locks of each node's blocklist
+  pthread_mutex_t lock_; // lock of the entire table
 
  public:
   static void ResetId() { __autoid__ = 0; }
 
-  // constructor for creating base table
-  Table(uint32_t nnodes, uint32_t nkeys);
-  // construtor for intermediate tables
   Table(OpType type, uint32_t nnodes, uint32_t nkeys /*, size_t nbuffers */);
   ~Table();
 
+  void BatchAddBlocks(vector<partition_t*> *local_blocks, size_t tuples, int node);
   void AddPartition(partition_t *p);
   bool Commit(int size = 1);
 
-  list<partition_t*>& GetPartitionsByNode(int node) {return pnodes_[node];}
-  list<partition_t*>& GetPartitionsByKey(int key) { return pkeys_[key]; }
+  BlockList& GetBlocksByNode(int node) {
+    return blocks_[node];
+  }
+
+  //  vector<partition_t*>& GetPartitionsByNode(int node) {return pnodes_[node];}
+  vector<partition_t*>& GetPartitionsByKey(int node, int key) { return blocks_[node][key]; }
+
+  BlockKeyIterator GetBlocksByKey(int radix) {
+    return BlockKeyIterator(blocks_, radix);
+  }
 
   size_t tuples() { return tuples_; }
 

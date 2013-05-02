@@ -4,146 +4,61 @@
 #include "hashjoin.h"
 #include "perf.h"
 
-void FlushBuffer(Table * table, partition_t *p, Environment *env)
+void FlushEntireBuffer(buffer_t *buffer, int node, Environment *env)
 {
-  p->ready = true;
-  table->AddPartition(p);
+  // add the rest blocks into localblocks
+  partition_t **blocks = buffer->partition;
+  for (int i = 0; i != buffer->partitions; ++i) {
+    if (blocks[i]->tuples != 0)
+      FlushBuffer(buffer, blocks[i], env);
+  }
 
+  // merge with the global table
+  Table * table = buffer->table;
+  table->BatchAddBlocks(buffer->localblocks, buffer->tuples, node);
+
+  vector<partition_t*> *buffered_blocks = buffer->localblocks;
   if (table->type() == OpPartition2) {
-    PartitionTask *newtask = new PartitionTask(p, Params::kOffsetPass2, Params::kNumBitsPass2);
+    for (vector<partition_t*>::iterator it = buffered_blocks->begin();
+         it != buffered_blocks->end(); ++it) {
+      partition_t *p = *it;
+      PartitionTask *newtask = new PartitionTask(p, Params::kOffsetPass2, Params::kNumBitsPass2);
 
-    P2Task ***p2tasks = env->GetP2TaskByTable(table->id());
-    P2Task *p2task = p2tasks[p->node][p->radix];
-    p2task->AddSubTask(newtask);
+      P2Task ***p2tasks = env->GetP2TaskByTable(table->id());
+      P2Task *p2task = p2tasks[p->node][p->radix];
+      p2task->AddSubTask(newtask);
 
-    if (!p2task->scheduled() && p2task->size() >= Params::kScheduleThreshold) {
-      env->nodes()[p->node].queue->AddTask(table->id(), p2task);
-      p2task->set_schedule(true);
+      if (!p2task->scheduled() && p2task->size() >= Params::kScheduleThreshold) {
+        env->nodes()[p->node].queue->AddTask(table->id(), p2task);
+        p2task->set_schedule(true);
+      }
     }
   }
   else if (table->type() == OpProbe) {
-    UnitProbeTask *newtask = new UnitProbeTask(p);
-    ProbeTask **probetasks = env->GetProbeTaskByTable(table->id());
-    ProbeTask *probe = probetasks[p->radix];
-    probe->AddSubTask(newtask);
+    for (vector<partition_t*>::iterator it = buffered_blocks->begin();
+         it != buffered_blocks->end(); ++it) {
+      partition_t *p = *it;
+
+      UnitProbeTask *newtask = new UnitProbeTask(p);
+      ProbeTask **probetasks = env->GetProbeTaskByTable(table->id());
+      ProbeTask *probe = probetasks[p->radix];
+      probe->AddSubTask(newtask);
+    }
   }
 }
 
-
-
-#ifdef NAIVE
-void
-PartitionTask::DoPartition(thread_t *my)
+void FlushBuffer(buffer_t *buffer, partition_t *p, Environment *env)
 {
-  int shift = shift_;
-  int fanout = fanout_;
-  int mask = mask_;
+  assert(p != NULL && p->tuples != 0 && p->radix != -1);
+  p->ready = true;
+  buffer->localblocks->push_back(p);
+  //  buffer->localblocks->AddBlock(p, index);
+  buffer->tuples += p->tuples;
 
-  Memory * memm = my->memm[pass_-1];
-#ifdef COLUMN_WISE
-  intkey_t * key_out = memm->keybase();
-  value_t * value_out = memm->valbase();
-#else
-  tuple_t *output = memm->baseptr();
-#endif
-
-  size_t block_size = memm->unit_size();
-
-  // check buffer compatibility
-  pthread_mutex_lock(&my->lock);
-  if (!buffer_compatible(my->buffer, out_, input_->radix)) {
-    // flush old buffers
-    if (my->buffer) {
-      partition_t **buffer = my->buffer->partition;
-      for (int i = 0; i != my->buffer->partitions; ++i)
-        if (buffer[i]->tuples != 0)
-          FlushBuffer(my->buffer->table, buffer[i], my->env);
-      buffer_destroy(my->buffer);
-    }
-    my->buffer = buffer_init(out_, input_->radix, fanout);
-  }
-  pthread_mutex_unlock(&my->lock);
-
-  partition_t **buffer = my->buffer->partition;
-
-  // initialize the output with initial buffer
-  for (int i = 0; i != fanout; ++i) {
-    // leave enough room for alignment
-    if (buffer[i] == NULL) {
-      buffer[i] = memm->GetPartition();
-      buffer[i]->radix = encode_radix(input_->radix, i, shift);
-    }
-  }
-#ifdef COLUMN_WISE
-  intkey_t * key_ptr = input_->key;
-  //  value_t * value_end = &input_->value[input_->tuples];
-  value_t * value_ptr = input_->value;
-#else
-  tuple_t *tuple_ptr = input_->tuple;
-#endif
-
-
-#ifdef COLUMN_WISE
-  intkey_t ** part_key = my->wc_part_key;
-  value_t ** part_value = my->wc_part_value;
-#else
-  tuple_t **part = my->wc_part;
-#endif
-
-  for (int i = 0; i != fanout; ++i) {
-#ifdef COLUMN_WISE
-	part_key[i] = &buffer[i]->key[buffer[i]->tuples];
-	part_value[i] = &buffer[i]->value[buffer[i]->tuples];
-#else
-    part[i] = &buffer[i]->tuple[buffer[i]->tuples];
-#endif
-  }
-
-  for (uint64_t i = 0; i != input_->tuples; ++i) {
-#ifdef COLUMN_WISE
-    intkey_t key = key_ptr[i];
-	value_t value = value_ptr[i];
-    uint32_t hash = mhash(key, mask, shift);
-    
-    *(part_key[hash]++) = key;
-    *(part_value[hash]++) = value;
-
-    if (part_key[hash] == buffer[hash]->key + block_size) { // block is full
-        buffer[hash]->tuples = block_size;
-        FlushBuffer(my->buffer->table, buffer[hash], my->env);
-        // create new buffer
-        
-        buffer[hash] = memm->GetPartition();
-        buffer[hash]->radix = encode_radix(input_->radix, hash, shift);
-        part_key[hash] = buffer[hash]->key;
-        part_value[hash] = buffer[hash]->value;
-    }
-#else
-    tuple_t row = tuple_ptr[i];
-    uint32_t hash = mhash(row.key, mask, shift);
-    *(part[hash]++) = row;
-    if (part[hash] == buffer[hash] + block_size) { // block is full
-        buffer[hash]->tuples = block_size;
-        FlushBuffer(my->buffer->table, buffer[hash], my->env);
-        // create new buffer
-        
-        buffer[hash] = memm->GetPartition();
-        buffer[hash]->radix = encode_radix(input_->radix, hash, shift);
-        part[hash] = buffer[hash]->tuple;
-    }
-#endif
-
-  }
-  for (int i = 0 ; i != fanout ; ++i) {
-#ifdef COLUMN_WISE
-    buffer[i]->tuples = (part_key[i] - buffer[i]->key); // set the new size
-#else    
-    buffer[i]->tuples = (part[i] - buffer[i]->tuple); // set the new size
-#endif
-  }
-
+  //  table->AddPartition(p);
 }
-#else
+
+
 void
 PartitionTask::DoPartition(thread_t *my)
 {
@@ -167,26 +82,25 @@ PartitionTask::DoPartition(thread_t *my)
   if (!buffer_compatible(my->buffer, out_, input_->radix)) {
     // flush old buffers
     if (my->buffer) {
-      partition_t **buffer = my->buffer->partition;
-      for (int i = 0; i != my->buffer->partitions; ++i)
-        if (buffer[i]->tuples != 0)
-          FlushBuffer(my->buffer->table, buffer[i], my->env);
+      FlushEntireBuffer(my->buffer, my->node_id, my->env);
       buffer_destroy(my->buffer);
     }
-    my->buffer = buffer_init(out_, input_->radix, fanout);
+    my->buffer = buffer_init(out_, input_->radix, shift, fanout);
+    // initialize the output with initial buffer
+    partition_t **buffer = my->buffer->partition;
+    for (int i = 0; i != fanout; ++i) {
+      assert(buffer[i] == NULL);
+      // leave enough room for alignment
+      if (buffer[i] == NULL) {
+        buffer[i] = memm->GetPartition();
+        buffer[i]->radix = encode_radix(input_->radix, i, shift);
+      }
+    }
   }
   pthread_mutex_unlock(&my->lock);
 
   partition_t **buffer = my->buffer->partition;
 
-  // initialize the output with initial buffer
-  for (int i = 0; i != fanout; ++i) {
-    // leave enough room for alignment
-    if (buffer[i] == NULL) {
-      buffer[i] = memm->GetPartition();
-      buffer[i]->radix = encode_radix(input_->radix, i, shift);
-    }
-  }
 
 #ifdef COLUMN_WISE
   intkey_t * key_end = &input_->key[input_->tuples];
@@ -294,7 +208,7 @@ PartitionTask::DoPartition(thread_t *my)
       if (((index + 1) & block_mask) == 0) {
         // flush full buffer
         buffer[hash]->tuples = block_size;
-        FlushBuffer(my->buffer->table, buffer[hash], my->env);
+        FlushBuffer(my->buffer, buffer[hash], my->env);
         // create new buffer
         
         buffer[hash] = memm->GetPartition();
@@ -337,9 +251,10 @@ PartitionTask::DoPartition(thread_t *my)
       if (((index + 1) & block_mask) == 0) {
         // flush full buffer
         buffer[hash]->tuples = block_size;
-        FlushBuffer(my->buffer->table, buffer[hash], my->env);
-        // create new buffer
         
+        FlushBuffer(my->buffer, buffer[hash], my->env);
+
+        // create new buffer
         buffer[hash] = memm->GetPartition();
         buffer[hash]->radix = encode_radix(input_->radix, hash, shift);
         wc_buf[hash].data[7] = buffer[hash]->offset;
@@ -359,33 +274,31 @@ PartitionTask::DoPartition(thread_t *my)
   }
 #endif
 }
-#endif
 
 void PartitionTask::Finish(thread_t* my)
 {
-  //  my->memm->Recycle(part_);
-
   if (input_->memm)
     input_->memm->Recycle(input_);
  
   // commit and check if I am the last one to finish? 
   if (!in_->Commit())
     return;
-
+  
   // force flush
   thread_t * thread = my->env->threads();
   for (int tid = 0; tid != my->env->nthreads(); ++tid) {
     pthread_mutex_lock(&thread[tid].lock);
-    buffer_t *buffer = thread[tid].buffer; // NEED a latch to do this work
+    buffer_t *buffer = thread[tid].buffer;
     // force flush all remaining buffers
     if (buffer && buffer->table == out_) {
-      for (int i = 0; i != buffer->partitions; ++i)
-        if (buffer->partition[i]->tuples != 0)
-          FlushBuffer(buffer->table, buffer->partition[i], my->env);
-      buffer_destroy(buffer);
       thread[tid].buffer = NULL;
+      pthread_mutex_unlock(&thread[tid].lock); // release the lock as soon as you reset the buffer   
+      FlushEntireBuffer(buffer, thread[tid].node_id, my->env);
+      buffer_destroy(buffer);
     }
-    pthread_mutex_unlock(&thread[tid].lock);
+    else {
+      pthread_mutex_unlock(&thread[tid].lock); // release the lock as soon as you reset the buffer      
+    }
   }
 
   // set output table to ready
@@ -450,13 +363,15 @@ void PartitionTask::Run(thread_t *my)
 {
   perf_counter_t before = perf_read(my->perf);
 
-  //  DoPartitionRemote(my);
   DoPartition(my);
-  Finish(my);
-
   perf_counter_t after = perf_read(my->perf);
   perf_counter_t state = perf_counter_diff(before, after);
 
-  perf_counter_aggr(&my->stage_counter[0], state);
+  Finish(my);
+
+  if (pass_ == 1)
+    perf_counter_aggr(&my->stage_counter[0], state);
+  else if (pass_ == 2)
+    perf_counter_aggr(&my->stage_counter[3], state);
 }
 

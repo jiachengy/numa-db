@@ -8,14 +8,19 @@
 using namespace std;
 
 buffer_t*
-buffer_init(Table * table, int radix, int partitions)
+buffer_init(Table * table, int radix, int shift, int partitions)
 {
   buffer_t* buffer = (buffer_t*)malloc(sizeof(buffer_t));
   buffer->table = table;
   buffer->radix = radix;
+  buffer->shift = shift;
   buffer->partitions = partitions;
   buffer->partition = (partition_t**)malloc(sizeof(partition_t*) * partitions);
   memset(buffer->partition, 0x0, sizeof(partition_t*) * partitions);
+
+  //  buffer->localblocks = new BlockList(partitions);
+  buffer->localblocks = new vector<partition_t*>();
+  buffer->tuples = 0;
   return buffer;
 }
 
@@ -85,6 +90,8 @@ Environment::Environment(uint32_t nnodes, uint32_t nthreads)
       node->groups[t] = thread;
     }
   }
+
+  pthread_barrier_init(&barrier_, NULL, nthreads);
 
   InitMem();
 }
@@ -187,11 +194,20 @@ Environment::RadixPartition(relation_t *rel)
     tq->Unblock(pass1tasks->id());
 
     // create partition task from table R
-    list<partition_t*>& pr = rt->GetPartitionsByNode(node);
-    logging("Partitions on node[%d]: %d\n", node, pr.size());
-    for (list<partition_t*>::iterator it = pr.begin(); 
-         it != pr.end(); it++) {
-      pass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // vector<partition_t*>& pr = rt->GetPartitionsByNode(node);
+    // logging("Partitions on node[%d]: %d\n", node, pr.size());
+    // for (vector<partition_t*>::iterator it = pr.begin(); 
+    //      it != pr.end(); it++) {
+    //   pass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // }
+    
+    BlockList &blocks = rt->GetBlocksByNode(node);
+    logging("Partitions on node[%d]: %d\n", node, blocks.blocks());
+    BlockIterator it = blocks.iterator();
+    while (it.hasNext()) {
+      partition_t *p = it.getNext();
+      assert(p != NULL);
+      pass1tasks->AddTask(new PartitionTask(p, Params::kOffsetPass1, Params::kNumBitsPass1));
     }
   }
 }
@@ -235,8 +251,8 @@ Environment::TwoPassPartition(relation_t *relR)
     Tasklist *rpass2tasks = new Tasklist(rpass1tb, rpass2tb, ShareNode);    
     // do not activate them here
     for (int key = 0; key < Params::kFanoutPass1; ++key) {
-      //           rpass2tasks->AddTask(p2tasksR[node][key]);
-      //           p2tasksR[node][key]->set_schedule(true);
+      // rpass2tasks->AddTask(p2tasksR[node][key]);
+      // p2tasksR[node][key]->set_schedule(true);
     }
 
     tasks_.push_back(rpass2tasks);
@@ -244,15 +260,26 @@ Environment::TwoPassPartition(relation_t *relR)
     tq->AddList(rpass1tasks);
     tq->AddList(rpass2tasks);
     tq->Unblock(rpass1tasks->id());
-    //    tq->Unblock(rpass2tasks->id());
+    tq->Unblock(rpass2tasks->id());
 
     // create partition task from table R
-    list<partition_t*>& pr = rt->GetPartitionsByNode(node);
-    logging("Partitions on node[%d]: %d\n", node, pr.size());
-    for (list<partition_t*>::iterator it = pr.begin(); 
-         it != pr.end(); it++) {
-      rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // vector<partition_t*>& pr = rt->GetPartitionsByNode(node);
+    // logging("Partitions on node[%d]: %d\n", node, pr.size());
+    // for (vector<partition_t*>::iterator it = pr.begin(); 
+    //      it != pr.end(); it++) {
+    //   rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // }
+
+
+    BlockList &blocks = rt->GetBlocksByNode(node);
+    logging("Partitions on node[%d]: %d\n", node, blocks.blocks());
+    BlockIterator it = blocks.iterator();
+    while (it.hasNext()) {
+      partition_t *p = it.getNext();
+      assert(p->radix == 0 && p->tuples != 0 && p->memm == NULL);
+      rpass1tasks->AddTask(new PartitionTask(p, Params::kOffsetPass1, Params::kNumBitsPass1));
     }
+
   }
 }
 
@@ -270,7 +297,7 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
   Table *st = Table::BuildTableFromRelation(relS);
   st->set_type(OpPartition);
   Table *spass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
-   Table *spass2tb = new Table(OpNone, nnodes_, Params::kFanoutTotal);
+  Table *spass2tb = new Table(OpNone, nnodes_, Params::kFanoutTotal);
 
 
   // Table Catelog
@@ -333,82 +360,33 @@ Environment::TwoPassPartition(relation_t *relR, relation_t *relS)
     tq->Unblock(rpass2tasks->id());
 
     // create partition task from table R
-    list<partition_t*>& pr = rt->GetPartitionsByNode(node);
-    logging("Partitions on node[%d]: %d\n", node, pr.size());
-    for (list<partition_t*>::iterator it = pr.begin(); 
-         it != pr.end(); it++) {
-      rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // vector<partition_t*>& pr = rt->GetPartitionsByNode(node);
+    // logging("Partitions on node[%d]: %d\n", node, pr.size());
+    // for (vector<partition_t*>::iterator it = pr.begin(); 
+    //      it != pr.end(); it++) {
+    //   rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // }
+    BlockList & rblocks = rt->GetBlocksByNode(node);
+    logging("Partitions on node[%d]: %d\n", node, rblocks.blocks());
+    BlockIterator it = rblocks.iterator();
+    while (it.hasNext()) {
+      partition_t *p = it.getNext();
+      rpass1tasks->AddTask(new PartitionTask(p, Params::kOffsetPass1, Params::kNumBitsPass1));
     }
 
-    list<partition_t*>& ps = st->GetPartitionsByNode(node);
-    logging("Partitions on node[%d]: %d\n", node, ps.size());
-    for (list<partition_t*>::iterator it = ps.begin(); 
-         it != ps.end(); it++) {
-      spass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
-    }
-  }
+    // vector<partition_t*>& ps = st->GetPartitionsByNode(node);
+    // logging("Partitions on node[%d]: %d\n", node, ps.size());
+    // for (vector<partition_t*>::iterator it = ps.begin(); 
+    //      it != ps.end(); it++) {
+    //   spass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // }
 
-}
-
-
-
-
-void
-Environment::PartitionAndBuild(relation_t *relR)
-{
-  ++queries_;
-
-  Table *rt = Table::BuildTableFromRelation(relR);
-  rt->set_type(OpPartition);
-
-  Table *rpass1tb = new Table(OpPartition2, nnodes_, Params::kFanoutPass1);
-  Table *rpass2tb = new Table(OpBuild, nnodes_, Params::kFanoutTotal);
-  Table *rbuild = new Table(OpNone, nnodes_, Params::kFanoutTotal);
-
-  // Table Catelog
-  AddTable(rt);
-  AddTable(rpass1tb);
-  AddTable(rpass2tb);
-  AddTable(rbuild);
-
-  // Global accessible p2tasks
-  P2Task ***p2tasksR = (P2Task***)malloc(sizeof(P2Task**) * nnodes_);
-  AddP2Tasks(p2tasksR, rpass1tb->id());
-  for (uint32_t node = 0; node != nnodes_; ++node) {
-    P2Task **p2_tasks_on_node = (P2Task**)malloc(sizeof(P2Task*) * Params::kFanoutPass1);
-    for (int key = 0; key < Params::kFanoutPass1; ++key)
-      p2_tasks_on_node[key] = new P2Task(key, rpass1tb, rpass2tb);
-    p2tasksR[node] = p2_tasks_on_node;
-  }
-
-  Tasklist *buildR = new Tasklist(rpass2tb, rbuild, ShareGlobal);
-  for (int i = 0; i != Params::kFanoutTotal; ++i)
-    buildR->AddTask(new BuildTask(NULL, i));
-
-  for (uint32_t node = 0; node < nnodes_; node++) {
-    Taskqueue *tq = nodes_[node].queue;
-
-    Tasklist *rpass1tasks = new Tasklist(rt, rpass1tb, ShareNode);
-    tasks_.push_back(rpass1tasks);
-
-    Tasklist *rpass2tasks = new Tasklist(rpass1tb, rpass2tb, ShareNode);    
-    for (int key = 0; key < Params::kFanoutPass1; ++key) {
-      rpass2tasks->AddTask(p2tasksR[node][key]);
-    }
-    tasks_.push_back(rpass2tasks);
-
-    tq->AddList(rpass1tasks);
-    tq->AddList(rpass2tasks);
-    tq->AddList(buildR);
-    tq->Unblock(rpass1tasks->id());
-    //    tq->Unblock(rpass2tasks->id());
-
-    // create partition task from table R
-    list<partition_t*>& pr = rt->GetPartitionsByNode(node);
-    logging("Partitions on node[%d]: %d\n", node, pr.size());
-    for (list<partition_t*>::iterator it = pr.begin(); 
-         it != pr.end(); it++) {
-      rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    BlockList & sblocks = st->GetBlocksByNode(node);
+    logging("Partitions on node[%d]: %d\n", node, sblocks.blocks());
+    BlockIterator its = sblocks.iterator();
+    while (its.hasNext()) {
+      partition_t *p = its.getNext();
+      spass1tasks->AddTask(new PartitionTask(p, Params::kOffsetPass1, Params::kNumBitsPass1));
     }
   }
 }
@@ -544,18 +522,35 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
     tq->Unblock(probetasks->id());
 
     // create partition task from table R
-    list<partition_t*>& pr = rt->GetPartitionsByNode(node);
-    logging("Partitions on node[%d]: %d\n", node, pr.size());
-    for (list<partition_t*>::iterator it = pr.begin(); 
-         it != pr.end(); it++) {
-      rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // vector<partition_t*>& pr = rt->GetPartitionsByNode(node);
+    // logging("Partitions on node[%d]: %d\n", node, pr.size());
+    // for (vector<partition_t*>::iterator it = pr.begin(); 
+    //      it != pr.end(); it++) {
+    //   rpass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // }
+
+    BlockList & rblocks = rt->GetBlocksByNode(node);
+    logging("Partitions on node[%d]: %d\n", node, rblocks.blocks());
+    BlockIterator it = rblocks.iterator();
+    while (it.hasNext()) {
+      partition_t *p = it.getNext();
+      rpass1tasks->AddTask(new PartitionTask(p, Params::kOffsetPass1, Params::kNumBitsPass1));
     }
 
-    list<partition_t*>& ps = st->GetPartitionsByNode(node);
-    logging("Partitions on node[%d]: %d\n", node, ps.size());
-    for (list<partition_t*>::iterator it = ps.begin(); 
-         it != ps.end(); it++) {
-      spass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // vector<partition_t*>& ps = st->GetPartitionsByNode(node);
+    // logging("Partitions on node[%d]: %d\n", node, ps.size());
+    // for (vector<partition_t*>::iterator it = ps.begin(); 
+    //      it != ps.end(); it++) {
+    //   spass1tasks->AddTask(new PartitionTask(*it, Params::kOffsetPass1, Params::kNumBitsPass1));
+    // }
+
+    BlockList & sblocks = st->GetBlocksByNode(node);
+    logging("Partitions on node[%d]: %d\n", node, sblocks.blocks());
+    BlockIterator its = sblocks.iterator();
+    while (its.hasNext()) {
+      partition_t *p = its.getNext();
+      spass1tasks->AddTask(new PartitionTask(p, Params::kOffsetPass1, Params::kNumBitsPass1));
     }
+
   }
 }

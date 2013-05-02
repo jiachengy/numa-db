@@ -53,12 +53,13 @@ partition_t* BuildTask::Build(thread_t *my)
 #else
 partition_t * BuildTask::Build(thread_t * my)
 {
-  list<partition_t*> &parts = in_->GetPartitionsByKey(radix_);
-
   size_t total_tuples = 0;
-  for(list<partition_t*>::iterator it = parts.begin();
-      it != parts.end(); ++it )
-    total_tuples += (*it)->tuples;
+  for (int node = 0; node != my->env->nnodes(); ++node) {
+    vector<partition_t*> &parts = in_->GetPartitionsByKey(node, radix_);
+    for(vector<partition_t*>::iterator it = parts.begin();
+        it != parts.end(); ++it )
+      total_tuples += (*it)->tuples;
+  }
 
   size_t partitions = get_hist_size(total_tuples);
   int shift = Params::kNumRadixBits;
@@ -87,21 +88,24 @@ partition_t * BuildTask::Build(thread_t * my)
   htp->radix = radix_;
   uint32_t *sum = htp->hashtable->sum;
 
-  for(list<partition_t*>::iterator it = parts.begin();
-      it != parts.end(); ++it ) {
+  for (int node = 0; node != my->env->nnodes(); ++node) {
+    vector<partition_t*> &parts = in_->GetPartitionsByKey(node, radix_);
+    for(vector<partition_t*>::iterator it = parts.begin();
+        it != parts.end(); ++it ) {
 #ifdef COLUMN_WISE
-    intkey_t * key = (*it)->key;
+      intkey_t * key = (*it)->key;
 #else
-    tuple_t * tuple = (*it)->tuple;
+      tuple_t * tuple = (*it)->tuple;
 #endif
-    size_t tuples = (*it)->tuples;
-    for (uint64_t i = 0; i != tuples ; ++i) {
+      size_t tuples = (*it)->tuples;
+      for (uint64_t i = 0; i != tuples ; ++i) {
 #ifdef COLUMN_WISE
-      uint32_t hash = mhash(key[i], mask, shift);
+        uint32_t hash = mhash(key[i], mask, shift);
 #else
-      uint32_t hash = mhash(tuple[i].key, mask, shift);
+        uint32_t hash = mhash(tuple[i].key, mask, shift);
 #endif
-      hist[hash]++;
+        hist[hash]++;
+      }
     }
   }
 
@@ -117,30 +121,33 @@ partition_t * BuildTask::Build(thread_t * my)
   }
   sum[partitions] = total_tuples;
 
-  for(list<partition_t*>::iterator it = parts.begin();
-      it != parts.end(); ++it ) {
-    partition_t * p = *it;
+  for (int node = 0; node != my->env->nnodes(); ++node) {
+    vector<partition_t*> &parts = in_->GetPartitionsByKey(node, radix_);
+    for(vector<partition_t*>::iterator it = parts.begin();
+        it != parts.end(); ++it ) {
+      partition_t * p = *it;
 
 #ifdef COLUMN_WISE
-	intkey_t * key = p->key;
-	value_t * value = p->value;
+      intkey_t * key = p->key;
+      value_t * value = p->value;
 #else
-    tuple_t * tuple = p->tuple;
+      tuple_t * tuple = p->tuple;
 #endif
-    for (uint64_t i = 0; i != p->tuples; ++i) {
+      for (uint64_t i = 0; i != p->tuples; ++i) {
 #ifdef COLUMN_WISE
-      uint32_t hash = mhash(key[i], mask, shift);
-      *(part_key[hash]++) = key[i];
-      *(part_value[hash]++) = value[i];
+        uint32_t hash = mhash(key[i], mask, shift);
+        *(part_key[hash]++) = key[i];
+        *(part_value[hash]++) = value[i];
 #else
-      uint32_t hash = mhash(tuple[i].key, mask, shift);
-      *(part[hash]++) = tuple[i];
+        uint32_t hash = mhash(tuple[i].key, mask, shift);
+        *(part[hash]++) = tuple[i];
 #endif
+      }
+
+      if (p->memm)
+        p->memm->Recycle(p);
     }
-
-    if (p->memm)
-      p->memm->Recycle(p);
-  }
+  }  
 
   return htp;
 }
@@ -173,11 +180,16 @@ void BuildTask::Finish(thread_t* my, partition_t *htp)
   probetask[radix_]->set_schedule(true);
 
   node_t *nodes = my->env->nodes();
-  for (int node = 0; node < my->env->nnodes(); ++node)
+
+  int parts = 0;
+  for (int node = 0; node < my->env->nnodes(); ++node) {
     nodes[node].queue->UnblockNext(in_->id());
+    parts += in_->GetPartitionsByKey(node, radix_).size();
+  }
 
   // commit and check if I am the last one to finish?
-  if (!in_->Commit(in_->GetPartitionsByKey(radix_).size()))
+
+  if (!in_->Commit(parts))
     return;
 
   // set the output hashtable table to ready
@@ -204,14 +216,11 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
   if (!buffer_compatible(my->buffer, out_, input_->radix)) {
     // flush old buffers
     if (my->buffer) {
-      partition_t **buffer = my->buffer->partition;
-      for (int i = 0; i != my->buffer->partitions; ++i)
-        if (buffer[i]->tuples != 0)
-          FlushBuffer(my->buffer->table, buffer[i], my->env);
+      FlushEntireBuffer(my->buffer, my->node_id, my->env);
       buffer_destroy(my->buffer);
     }
     // we only need one buffer
-    my->buffer = buffer_init(out_, input_->radix, 1);
+    my->buffer = buffer_init(out_, input_->radix, shift, 1);
   }
   pthread_mutex_unlock(&my->lock);
 
@@ -255,7 +264,7 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
         *(value_out++) = rvalue[i];
         if (key_out == key_end) {
           outbuf->tuples = outbuf->capacity;
-          FlushBuffer(my->buffer->table, outbuf, my->env);
+          FlushBuffer(my->buffer, outbuf, my->env);
           
           outbuf = memm->GetPartition();
           outbuf->radix = input_->radix;
@@ -307,9 +316,11 @@ void UnitProbeTask::Run(thread_t *my)
 
   int radix = input_->radix;
   Table *buildtable = my->env->build_table();
-  list<partition_t*> &htps = buildtable->GetPartitionsByKey(radix);
-  hashtable_t *hashtable = htps.front()->hashtable;
 
+  BlockKeyIterator it = buildtable->GetBlocksByKey(radix);
+  assert(it.hasNext());
+  hashtable_t *hashtable = it.getNext()->hashtable;
+  
   DoJoin(hashtable, my);
 
   Finish(my);
@@ -322,7 +333,6 @@ void UnitProbeTask::Run(thread_t *my)
 
 void UnitProbeTask::Finish(thread_t* my)
 {
-  //  my->memm->Recycle(input_);
   if (input_->memm)
     input_->memm->Recycle(input_);
   
@@ -338,9 +348,7 @@ void UnitProbeTask::Finish(thread_t* my)
     buffer_t *buffer = thread[tid].buffer; // NEED a latch to do this work
     // force flush all remaining buffers
     if (buffer && buffer->table == out_) {
-      for (int i = 0; i != buffer->partitions; ++i)
-        if (buffer->partition[i]->tuples != 0)
-          FlushBuffer(buffer->table, buffer->partition[i], my->env);
+      FlushEntireBuffer(buffer, thread[tid].node_id, my->env);
       buffer_destroy(buffer);
       thread[tid].buffer = NULL;
     }

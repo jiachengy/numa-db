@@ -42,69 +42,61 @@ void partition_reset(partition_t * partition)
 }
 
 
-Table::Table(uint32_t nnodes, uint32_t nkeys)
-  : id_(__autoid__++), ready_(false), done_(false),
-    nparts_(0), done_count_(0)
-{
-  type_ = OpNone;
-
-  nkeys_ = nkeys;
-  if (nkeys_)
-    pkeys_.resize(nkeys);
-
-  nnodes_ = nnodes;
-  pnodes_.resize(nnodes);
-
-  //  nbuffers_ = 0;
-
-  pthread_mutex_init(&mutex_, NULL);
-}
-
-
-Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys /*, size_t nbuffers */)
+Table::Table(OpType type, uint32_t nnodes, uint32_t nkeys)
   : id_(__autoid__++), ready_(false), done_(false),
     nparts_(0), done_count_(0)
 {
   type_ = type;
 
   nkeys_ = nkeys;
-  if (nkeys_)
-    pkeys_.resize(nkeys);
-
   nnodes_ = nnodes;
-  pnodes_.resize(nnodes);
 
-
-  pthread_mutex_init(&mutex_, NULL);
+  mutex_ = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t) * nnodes);
+  for (int i = 0; i != nnodes; ++i) {
+    blocks_.push_back(BlockList(nkeys));
+    pthread_mutex_init(&mutex_[i], NULL);
+  }
+  pthread_mutex_init(&lock_, NULL);
+  
 }
 
 Table::~Table() {
-  for (uint32_t node = 0; node < nnodes_; ++node) {
-    list<partition_t*> &pnode = pnodes_[node];
-    for (list<partition_t*>::iterator it = pnode.begin();
-         it != pnode.end(); ++it) {
-      assert(*it != NULL);
-      delete *it;
-    }
+}
+
+void Table::BatchAddBlocks(vector<partition_t*> *local_blocks, size_t tuples, int node)
+{
+  pthread_mutex_lock(&mutex_[node]);
+  BlockList& node_blocks = blocks_[node];  
+  size_t sum = 0;
+  for (vector<partition_t*>::iterator it = local_blocks->begin();
+       it != local_blocks->end(); ++it) {
+
+    assert((*it)->radix >= 0);
+    sum += (*it)->tuples;
+    node_blocks.AddBlock(*it);
   }
+  pthread_mutex_unlock(&mutex_[node]);
+
+  assert(sum == tuples);
+
+  pthread_mutex_lock(&lock_);
+  nparts_ += local_blocks->size();
+  tuples_ += tuples;
+  pthread_mutex_unlock(&lock_);
 }
 
 void Table::AddPartition(partition_t *p)
 {
-  pthread_mutex_lock(&mutex_);
-
-  pnodes_[p->node].push_back(p);
-  if (nkeys_)
-    pkeys_[p->radix].push_back(p);
+  pthread_mutex_lock(&lock_);
+  blocks_[p->node].AddBlock(p);
   nparts_++;
   tuples_ += p->tuples;
- 
-  pthread_mutex_unlock(&mutex_);
+  pthread_mutex_unlock(&lock_);
 }
 
 bool Table::Commit(int size)
 {
-  pthread_mutex_lock(&mutex_);
+  pthread_mutex_lock(&lock_);
   bool done = false;
   done_count_ += size;
 
@@ -112,7 +104,7 @@ bool Table::Commit(int size)
     set_done();
     done = true;
   }
-  pthread_mutex_unlock(&mutex_);
+  pthread_mutex_unlock(&lock_);
 
   return done;
 }
@@ -120,10 +112,9 @@ bool Table::Commit(int size)
 Table*
 Table::BuildTableFromRelation(relation_t *rel)
 {
-  Table *table = new Table(num_numa_nodes(), 0);
+  Table *table = new Table(OpNone, num_numa_nodes(), 1);
 
   size_t ntuples_per_partition = Params::kMaxTuples;
-  //  size_t ntuples_per_partition = rel->ntuples; 
 
   uint32_t node;
   for (node = 0; node != rel->nnodes; ++node) {
