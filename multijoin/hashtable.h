@@ -8,14 +8,15 @@ typedef struct hashtable_t hashtable_t;
 
 #ifdef BUCKET_CHAINING
 struct entry_t {
-  tuple_t tuple;
+  intkey_t key;
+  value_t value;
   int next;
 };
 struct hashtable_t {
   entry_t *next;
   int *bucket;
-  uint32_t nbuckets;
-  uint32_t ntuples;
+  size_t buckets;
+  size_t tuples;
 };
 #else
 struct hashtable_t {

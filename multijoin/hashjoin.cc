@@ -49,7 +49,6 @@ void FlushEntireBuffer(buffer_t *buffer, int node, Environment *env)
 
 void FlushBuffer(buffer_t *buffer, partition_t *p, Environment *env)
 {
-  assert(p != NULL && p->tuples != 0 && p->radix != -1);
   p->ready = true;
   buffer->localblocks->push_back(p);
   //  buffer->localblocks->AddBlock(p, index);
@@ -369,9 +368,15 @@ void PartitionTask::Run(thread_t *my)
 
   Finish(my);
 
-  if (pass_ == 1)
-    perf_counter_aggr(&my->stage_counter[0], state);
-  else if (pass_ == 2)
+  if (pass_ == 1) {
+    if (in_->id() == 0)
+      perf_counter_aggr(&my->stage_counter[0], state);
+    else
+      perf_counter_aggr(&my->stage_counter[5], state);
+  }
+  else if (in_->id() == 1)
     perf_counter_aggr(&my->stage_counter[3], state);
+  else
+    perf_counter_aggr(&my->stage_counter[4], state);
 }
 

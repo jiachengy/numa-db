@@ -7,7 +7,7 @@
 
 #define CACHE_LINE_SIZE 64
 
-#define STAGES 4
+#define STAGES 6
 
 #define TWO_PASSES
 
@@ -25,7 +25,7 @@ class Params
  public:
   //  static size_t kMaxHtTuples;
   static const size_t kPartitionSize = 1024 * 1024; // 1M
-  static const size_t kSmallPartitionSize = 64 * 1024; // 256K: L2 size
+  static const size_t kSmallPartitionSize = 1024 * 64; // 256K: L2 size
 
 
 

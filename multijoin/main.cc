@@ -51,10 +51,10 @@ int main(int argc, char *argv[])
   logging("Building R table with %ld tuples done.\n", rsize);
 
   // relation_t * relS = parallel_build_relation_pk(ssize, nodes, nthreads);
-  relation_t * relS = build_scalar_skew(ssize, ssize, nodes, nthreads, 1);
+   relation_t * relS = build_scalar_skew(ssize, ssize, nodes, nthreads, 1);
   //  relation_t *relS = parallel_build_relation_fk(ssize, 2, rsize, nodes, nthreads);
   //  relation_t * relS = build_placement_skew(ssize, 2, ssize, nodes, nthreads, tps_skew);
-  logging("Building S table with %ld tuples done.\n", ssize);
+   logging("Building S table with %ld tuples done.\n", ssize);
    
   // gConfig.large_mem_per_thread = rsize / nthreads * 2;
   // gConfig.small_mem_per_thread = rsize / nthreads * 4;
@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
   logging("Environment initialized.\n");
 
   //   env->PartitionAndBuild(relR);
-  //  env->RadixPartition(relR);
+  //   env->RadixPartition(relR);
   //  env->TwoPassPartition(relR);
   //  env->TwoPassPartition(relR, relS);
   env->Hashjoin(relR, relS);

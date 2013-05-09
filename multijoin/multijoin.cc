@@ -156,34 +156,34 @@ void* work_thread(void *param)
     assert(task == NULL);
 
     // poll buffered stolen task
-    if (my->stolentasks) {
-      task = my->stolentasks->FetchAtomic();
+    // if (my->stolentasks) {
+    //   task = my->stolentasks->FetchAtomic();
       
-      // case 1: we steal a job
-      if (task) {
-        my->remote++;
-        run_task(task, my);
-        continue;
-      }
-      // case 2: the job we trying to steal is empty or has already exhausted
-      else {
-        my->stolentasks = NULL;
-      }
-    }
+    //   // case 1: we steal a job
+    //   if (task) {
+    //     my->remote++;
+    //     run_task(task, my);
+    //     continue;
+    //   }
+    //   // case 2: the job we trying to steal is empty or has already exhausted
+    //   else {
+    //     my->stolentasks = NULL;
+    //   }
+    // }
 
-    assert(my->stolentasks == NULL);
+    // assert(my->stolentasks == NULL);
 
-    if (!my->stolentasks)
-      steal_local(my);
+    // if (!my->stolentasks)
+    //   steal_local(my);
 
     
-    if (!my->stolentasks) {
-      task = steal_remote(my);
-      if (task) {
-        my->remote++;
-        run_task(task, my);
-      }
-    }
+    // if (!my->stolentasks) {
+    //   task = steal_remote(my);
+    //   if (task) {
+    //     my->remote++;
+    //     run_task(task, my);
+    //   }
+    // }
   }
 
   logging("Putbacks: %d\n", putbacks);
@@ -234,20 +234,26 @@ void Run(Environment *env)
 #elif PER_CORE == 1
   thread_t *args = env->threads();
   perf_counter_t partition_aggr = PERF_COUNTER_INITIALIZER;
+  perf_counter_t partitionS_aggr = PERF_COUNTER_INITIALIZER;
   perf_counter_t partition2_aggr = PERF_COUNTER_INITIALIZER;
+  perf_counter_t partition2s_aggr = PERF_COUNTER_INITIALIZER;
   perf_counter_t build_aggr = PERF_COUNTER_INITIALIZER;
   perf_counter_t probe_aggr = PERF_COUNTER_INITIALIZER;
   perf_counter_t total_aggr = PERF_COUNTER_INITIALIZER;
 
   for (int i = 0; i != env->nthreads(); ++i) {
     perf_counter_aggr(&partition_aggr, args[i].stage_counter[0]);
+    perf_counter_aggr(&partitionS_aggr, args[i].stage_counter[5]);
     perf_counter_aggr(&partition2_aggr, args[i].stage_counter[3]);
+    perf_counter_aggr(&partition2s_aggr, args[i].stage_counter[4]);
     perf_counter_aggr(&build_aggr, args[i].stage_counter[1]);
     perf_counter_aggr(&probe_aggr, args[i].stage_counter[2]);
     perf_counter_aggr(&total_aggr, args[i].total_counter);
 #ifdef PRINT_PER_THREAD
     logging("Thread[%d] partition: %ld usec\n", i, args[i].stage_counter[0].tick);
+    logging("Thread[%d] partitionS: %ld usec\n", i, args[i].stage_counter[5].tick);
     logging("Thread[%d] partition2: %ld usec\n", i, args[i].stage_counter[3].tick);
+    logging("Thread[%d] partition2s: %ld usec\n", i, args[i].stage_counter[4].tick);
     logging("Thread[%d] build: %ld usec\n", i, args[i].stage_counter[1].tick);
     logging("Thread[%d] probe: %ld usec\n", i, args[i].stage_counter[2].tick);
     logging("Thread[%d] time: %ld  usec\n", i, args[i].total_counter.tick);
@@ -256,8 +262,12 @@ void Run(Environment *env)
   }
   logging("Aggregate partition counter:\n");
   perf_print(partition_aggr);
+  logging("Aggregate partitionS counter:\n");
+  perf_print(partitionS_aggr);
   logging("Aggregate partition2 counter:\n");
   perf_print(partition2_aggr);
+  logging("Aggregate partition2s counter:\n");
+  perf_print(partition2s_aggr);
   logging("Aggregate build counter:\n");
   perf_print(build_aggr);
   logging("Aggregate probe counter:\n");
@@ -266,7 +276,9 @@ void Run(Environment *env)
   perf_print(total_aggr);
 
   logging("average partition: %.2f usec\n", 1.0 * partition_aggr.tick / env->nthreads());
-  logging("average partition2: %.2f usec\n", 1.0 * partition2_aggr.tick / env->nthreads());
+  logging("average partitionS: %.2f usec\n", 1.0 * partitionS_aggr.tick / env->nthreads());
+  logging("average R partition2: %.2f usec\n", 1.0 * partition2_aggr.tick / env->nthreads());
+  logging("average S partition2: %.2f usec\n", 1.0 * partition2s_aggr.tick / env->nthreads());
   logging("average build: %.2f usec\n", 1.0 * build_aggr.tick / env->nthreads());
   logging("average probe: %.2f usec\n", 1.0 * probe_aggr.tick / env->nthreads());
   logging("average total: %.2f usec\n", 1.0 * total_aggr.tick / env->nthreads());

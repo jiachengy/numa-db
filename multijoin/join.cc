@@ -12,39 +12,44 @@ inline size_t get_hist_size(size_t tuples)
   return tuples;
 }
 
-#ifdef LINEAR_PROBING
+#ifdef BUCKET_CHAINING
 // NOT IMPLEMENTED
 partition_t* BuildTask::Build(thread_t *my)
 {
-  list<partition_t*> &parts = in_->GetPartitionsByKey(radix_);
-
   size_t tuples = 0;
-  for(list<partition_t*>::iterator it = parts.begin();
-      it != parts.end(); ++it )
-    tuples += (*it)->tuples;
+  for (int node = 0; node != my->env->nnodes(); ++node) {
+    vector<partition_t*> &parts = in_->GetPartitionsByKey(node, radix_);
+    for(vector<partition_t*>::iterator it = parts.begin();
+        it != parts.end(); ++it )
+      tuples += (*it)->tuples;
+  }
 
-  uint8_t bits = log_2(tuples / Params::kLoadFactor);
-  size_t buckets = pow_2(bits); // NEXT_POW_2(tuples / Params::kLoadFactor)
+  size_t buckets = NEXT_POW_2(tuples / Params::kLoadFactor);
   int shift = Params::kNumRadixBits;
   int32_t mask  = (buckets - 1) << shift;
 
   partition_t *htp = my->memm[2]->GetHashtable(buckets);
   htp->radix = radix_;
+  htp->buckets = buckets;
+  htp->tuples = tuples;
 
-  tuple_t * bucket = htp->hashtable->tuple;
+  int * bucket = htp->hashtable->bucket;
+  entry_t * entry = htp->hashtable->entry;
 
-  for(list<partition_t*>::iterator it = parts.begin();
-      it != parts.end(); ++it ) {
-	intkey_t * key = (*it)->key;
-	value_t * value = (*it)->value;
-    for (uint64_t i = 0; i < (*it)->tuples; ++i) {
-      uint32_t hash = mhash(key, mask, shift);
-      for (uint64_t j = hash; j != buckets; ++j) {
-        if (bucket[j] == 0) { // invalid key
-          bucket[j].key = key[i];
-          bucket[j].payload = value[i];
-          break;
-        }
+  uint64_t idx = 0;
+
+  for (int node = 0; node != my->env->nnodes(); ++node) {
+    vector<partition_t*> &parts = in_->GetPartitionsByKey(node, radix_);
+    for(vector<partition_t*>::iterator it = parts.begin();
+        it != parts.end(); ++it ) {
+      intkey_t * key = (*it)->key;
+      value_t * value = (*it)->value;
+      for (uint64_t i = 0; i < (*it)->tuples; ++i) {
+        uint32_t hash = mhash(key[i], mask, shift);
+        entry[idx].next = bucket[hash];
+        entry[idx].key = key[i];
+        entry[idx].value = value[i];
+        bucket[hash] = ++idx;
       }
     }
   }
@@ -202,7 +207,72 @@ void BuildTask::Finish(thread_t* my, partition_t *htp)
     my->env->set_done();
 }
 
+#ifdef BUCKET_CHAINING
+void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
+{
+  size_t buckets = hashtable->buckets;
+  int shift = Params::kNumRadixBits;
+  int32_t mask  = (buckets-1) << shift;
 
+  Memory * memm = my->memm[1]; // use the smaller partition size
+
+  pthread_mutex_lock(&my->lock);
+  // check buffer compatibility
+  if (!buffer_compatible(my->buffer, out_, input_->radix)) {
+    // flush old buffers
+    if (my->buffer) {
+      FlushEntireBuffer(my->buffer, my->node_id, my->env);
+      buffer_destroy(my->buffer);
+    }
+    // we only need one buffer
+    my->buffer = buffer_init(out_, input_->radix, shift, 1);
+  }
+  pthread_mutex_unlock(&my->lock);
+
+  if (my->buffer->partition[0] == NULL) {
+    my->buffer->partition[0] = memm->GetPartition();
+    my->buffer->partition[0]->radix = input_->radix;
+  }    
+
+  partition_t *outbuf = my->buffer->partition[0];
+
+  intkey_t * skey = input_->key;
+  value_t * svalue = input_->value;
+
+  intkey_t * key_out = outbuf->key + outbuf->tuples;
+  intkey_t * key_end = outbuf->key + outbuf->capacity;
+  value_t * value_out = outbuf->value + outbuf->tuples;
+
+  size_t matches = 0;
+  for (uint64_t i = 0; i != input_->tuples; ++i) {
+	uint32_t idx = mhash(skey[i], mask, shift);
+    entry_t e;
+    for (int hit = bucket[idx]; hit > 0; hit = e.next) {
+      e = entry[hit-1];
+
+      if (skey[i] == e.key) {
+        matches++;
+        *(key_out++) = svalue[i];
+        *(value_out++) = e.value;
+
+        if (key_out == key_end) {
+          outbuf->tuples = outbuf->capacity;
+          FlushBuffer(my->buffer, outbuf, my->env);
+          
+          outbuf = memm->GetPartition();
+          outbuf->radix = input_->radix;
+		  
+          key_out = outbuf->key;
+          key_end = outbuf->key + outbuf->capacity;;
+          value_out = outbuf->value;
+          my->buffer->partition[0] = outbuf;
+        }
+
+      }
+    }
+  }  
+}
+#else
 void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
 {
   size_t partitions = hashtable->partitions;
@@ -307,7 +377,7 @@ void UnitProbeTask::DoJoin(hashtable_t *hashtable, thread_t *my)
  //  outbuf->tuples = matches;
 #endif
 }
-
+#endif
 
 // First write a version without output
 void UnitProbeTask::Run(thread_t *my)

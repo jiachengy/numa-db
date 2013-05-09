@@ -67,17 +67,12 @@ void Table::BatchAddBlocks(vector<partition_t*> *local_blocks, size_t tuples, in
 {
   pthread_mutex_lock(&mutex_[node]);
   BlockList& node_blocks = blocks_[node];  
-  size_t sum = 0;
   for (vector<partition_t*>::iterator it = local_blocks->begin();
        it != local_blocks->end(); ++it) {
-
-    assert((*it)->radix >= 0);
-    sum += (*it)->tuples;
     node_blocks.AddBlock(*it);
   }
   pthread_mutex_unlock(&mutex_[node]);
 
-  assert(sum == tuples);
 
   pthread_mutex_lock(&lock_);
   nparts_ += local_blocks->size();

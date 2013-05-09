@@ -516,10 +516,10 @@ Environment::Hashjoin(relation_t *relR, relation_t *relS)
 #endif
     tq->AddList(probetasks);
     tq->Unblock(rpass1tasks->id());
-    tq->Unblock(rpass2tasks->id());
-    tq->Unblock(spass1tasks->id());
-    tq->Unblock(spass2tasks->id());
-    tq->Unblock(probetasks->id());
+    // tq->Unblock(rpass2tasks->id());
+    // tq->Unblock(spass1tasks->id());
+    // tq->Unblock(spass2tasks->id());
+    // tq->Unblock(probetasks->id());
 
     // create partition task from table R
     // vector<partition_t*>& pr = rt->GetPartitionsByNode(node);

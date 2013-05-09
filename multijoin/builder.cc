@@ -174,6 +174,7 @@ build_fk_thread(void *params)
   relation_t *rel = arg->rel;
 
   cpu_bind(cpu);
+  cpu_membind(cpu);
 
   if (cpu == cpu_of_node(node, 0)) {
     size_t ntuples_on_node = arg->rel->ntuples_on_node[node];
@@ -227,6 +228,7 @@ build_pk_thread(void *params)
   relation_t *rel = arg->rel;
 
   cpu_bind(cpu);
+  cpu_membind(cpu);
 
   if (cpu == cpu_of_node(node, 0)) {
     size_t ntuples_on_node = arg->rel->ntuples_on_node[node];
@@ -457,6 +459,7 @@ build_scalar_thread(void *params)
   relation_t *rel = arg->rel;
 
   cpu_bind(cpu);
+  cpu_membind(cpu);
 
   if (cpu == cpu_of_node(node, 0)) {
     size_t ntuples_on_node = arg->rel->ntuples_on_node[node];

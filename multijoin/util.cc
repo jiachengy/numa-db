@@ -147,8 +147,13 @@ void* alloc(size_t sz)
 {
   void *ptr;
 #ifdef NUMA_INTERLEAVED
-  //  ptr = alloc_on_node(2, sz);
-  ptr = alloc_interleaved(sz);
+  //  int node = get_running_node();
+
+  ptr = alloc_on_node(0, sz);
+  //  ptr = alloc_on_node((node+1) % 4, sz);
+
+
+  //  ptr = alloc_interleaved(sz);
   return ptr;
 #else
   int retval;
@@ -165,6 +170,7 @@ void* alloc_interleaved(size_t sz)
   bitmask *prev = numa_get_membind(); // save prev mask
   numa_set_membind(numa_all_nodes_ptr); // rebind to all nodes
   void *data = numa_alloc_interleaved(sz);
+  memset(data, 0x0, sz);
   // restore prev mask
   numa_set_membind(prev);
   return data;
